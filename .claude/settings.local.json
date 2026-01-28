@@ -1,0 +1,30 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(/Users/Maxwell/.local/bin/npx vite build)",
+      "Bash(tree:*)",
+      "Bash(npm install)",
+      "Bash(npx vite build:*)",
+      "Bash(npm run build:*)",
+      "Bash(npm install:*)",
+      "Bash(timeout 5 node:*)",
+      "Bash(node -e:*)",
+      "Bash(pkill:*)",
+      "Bash(lsof:*)",
+      "Bash(curl:*)",
+      "Bash(node --check:*)",
+      "Bash(pgrep:*)",
+      "Bash(npm run dev:full:*)",
+      "Bash(xargs kill -9)",
+      "Bash(npx eslint:*)",
+      "Bash(node -c:*)",
+      "Bash(timeout 10 npm run dev:*)",
+      "Bash(grep:*)",
+      "Bash(wc:*)",
+      "Bash(ls:*)",
+      "Bash(find:*)",
+      "Bash(git init:*)",
+      "Bash(git add:*)"
+    ]
+  }
+}

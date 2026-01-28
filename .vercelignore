@@ -1,0 +1,17 @@
+# Dependencies
+node_modules/
+
+# Development files
+server.js
+.env
+.env.local
+
+# Build output (Vercel will build fresh)
+dist/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
