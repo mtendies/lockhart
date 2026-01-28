@@ -1,4 +1,7 @@
 import { useState, useEffect, useRef, Component } from 'react';
+import { AuthProvider, useAuth } from './context/AuthContext';
+import Auth from './components/Auth';
+import * as dataService from './lib/dataService';
 
 // Error boundary to catch and display React errors
 class ErrorBoundary extends Component {
@@ -67,7 +70,8 @@ import LearnedInsightsPage from './components/LearnedInsightsPage';
 import { InsightNotificationContainer } from './components/InsightNotification';
 import { getLearnedInsights } from './learnedInsightsStore';
 
-function App() {
+function AppContent() {
+  const { user, loading: authLoading, signOut } = useAuth();
   const [profile, setProfile] = useState(null);
   const [notes, setNotes] = useState({});
   const [loading, setLoading] = useState(true);
@@ -441,7 +445,7 @@ function App() {
         )}
 
         {/* Main Content - flex-1 with overflow handling */}
-        <div className="flex-1 flex flex-col min-h-0 pb-16">
+        <div className="flex-1 flex flex-col min-h-0 pb-safe">
           {view === 'home' && (
             <div className="flex-1 overflow-y-auto">
               <HomePage onNavigate={handleNavigate} onOpenCheckIn={handleOpenCheckIn} />
@@ -563,6 +567,40 @@ function App() {
       </div>
     </ErrorBoundary>
   );
+}
+
+// Main App component with Auth wrapper
+function App() {
+  return (
+    <AuthProvider>
+      <AuthenticatedApp />
+    </AuthProvider>
+  );
+}
+
+// Handles auth state and shows appropriate component
+function AuthenticatedApp() {
+  const { user, loading: authLoading } = useAuth();
+
+  // Show loading spinner while checking auth
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="w-12 h-12 border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin mx-auto" />
+          <p className="mt-4 text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show auth screen if not logged in
+  if (!user) {
+    return <Auth />;
+  }
+
+  // Show main app content if authenticated
+  return <AppContent />;
 }
 
 export default App;

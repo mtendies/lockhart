@@ -157,7 +157,7 @@ export default function ChatSidebar({
 
       {/* Sidebar - fixed height on desktop to allow internal scrolling */}
       <div
-        className={`fixed md:relative inset-y-0 md:inset-y-auto left-0 z-50 md:z-10 w-80 md:h-full bg-white border-r border-gray-200 flex flex-col flex-shrink-0 transform transition-transform duration-200 ease-in-out ${
+        className={`fixed md:relative inset-y-0 md:inset-y-auto left-0 z-50 md:z-10 w-full sm:w-80 md:h-full bg-white border-r border-gray-200 flex flex-col flex-shrink-0 transform transition-transform duration-200 ease-in-out ${
           isOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0 md:w-0 md:overflow-hidden'
         }`}
       >

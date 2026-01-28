@@ -54,7 +54,7 @@ export default function Chat({
   const [chats, setChats] = useState([]);
   const [archivedChats, setArchivedChats] = useState([]);
   const [currentChatId, setCurrentChatId] = useState(null);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 768);
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [showArchived, setShowArchived] = useState(false);
 
@@ -206,6 +206,10 @@ export default function Chat({
       setPendingSuggestions({});
       setApprovedSuggestions({});
       setShowArchived(chat.archived);
+      // Close sidebar on mobile after selecting a chat
+      if (window.innerWidth < 768) {
+        setSidebarOpen(false);
+      }
     }
   }
 
@@ -218,6 +222,10 @@ export default function Chat({
     setApprovedSuggestions({});
     setShowArchived(false);
     refreshChats();
+    // Close sidebar on mobile after creating new chat
+    if (window.innerWidth < 768) {
+      setSidebarOpen(false);
+    }
   }
 
   // Update current chat's messages

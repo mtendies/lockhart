@@ -110,7 +110,16 @@ body {
   animation: scale-in 0.2s ease-out;
 }
 
-/* Safe area padding for iOS devices with home indicator */
+/* Safe area padding for iOS devices */
 .safe-area-bottom {
   padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.safe-area-top {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+/* Ensure content doesn't hide behind bottom nav on mobile */
+.pb-safe {
+  padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px));
 }

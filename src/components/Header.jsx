@@ -13,6 +13,7 @@ import {
   HelpCircle,
 } from 'lucide-react';
 import { getActiveProfile, getProfileColor } from '../profileStore';
+import { useAuth } from '../context/AuthContext';
 
 export default function Header({
   onNavigateToProfile,
@@ -22,6 +23,7 @@ export default function Header({
   onOpenDevTools,
   onShowTutorial,
 }) {
+  const { user, signOut } = useAuth();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef(null);
   const activeProfile = getActiveProfile();
@@ -169,6 +171,22 @@ export default function Header({
                     >
                       <Wrench size={16} className="text-gray-400" />
                       Dev Tools
+                    </button>
+                  </div>
+                )}
+
+                {/* Sign Out */}
+                {user && (
+                  <div className="border-t border-gray-100 py-1">
+                    <div className="px-4 py-2 text-xs text-gray-400 truncate">
+                      {user.email}
+                    </div>
+                    <button
+                      onClick={() => handleMenuClick(signOut)}
+                      className="w-full px-4 py-2.5 flex items-center gap-3 text-sm text-red-600 hover:bg-red-50 transition-colors"
+                    >
+                      <LogOut size={16} />
+                      Sign Out
                     </button>
                   </div>
                 )}

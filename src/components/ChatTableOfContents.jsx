@@ -197,10 +197,10 @@ export default function ChatTableOfContents({
         </button>
       )}
 
-      {/* Mobile/Tablet Floating Button - smaller */}
+      {/* Mobile/Tablet Floating Button - smaller, positioned above bottom nav */}
       <button
         onClick={onToggle}
-        className="md:hidden fixed right-3 bottom-20 z-40 p-2 bg-white text-gray-600 border border-gray-200 rounded-lg shadow-sm hover:bg-gray-50 transition-colors"
+        className="md:hidden fixed right-3 bottom-24 z-40 p-2 bg-white text-gray-600 border border-gray-200 rounded-lg shadow-sm hover:bg-gray-50 transition-colors"
       >
         <List size={16} />
       </button>
@@ -214,8 +214,8 @@ export default function ChatTableOfContents({
             onClick={onToggle}
           />
 
-          {/* Bottom Sheet */}
-          <div className="absolute bottom-0 left-0 right-0 bg-white rounded-t-xl max-h-[60vh] flex flex-col">
+          {/* Bottom Sheet - positioned above bottom nav */}
+          <div className="absolute bottom-16 left-0 right-0 bg-white rounded-t-xl max-h-[50vh] flex flex-col shadow-xl">
             {/* Handle */}
             <div className="flex justify-center py-2">
               <div className="w-8 h-1 bg-gray-300 rounded-full" />
