@@ -38,7 +38,11 @@ import {
   X,
   Trash2,
   Bot,
+  Flame,
+  HelpCircle,
+  Info,
 } from 'lucide-react';
+import { estimateCalories, needsClarification } from '../calorieEstimator';
 import { getPendingAdditionFor, approveAddition, removeAddition } from '../advisorAdditionsStore';
 import {
   getCalibrationData,
@@ -64,7 +68,316 @@ import {
   saveDefaultMealPattern,
   hasSetupMealPattern,
   createMeal,
+  isCalibrationComplete,
+  hasChosenTrackingMode,
+  setTrackingMode,
+  getTrackingMode,
+  TRACKING_MODES,
+  saveDailyJournalEntry,
+  getTodayJournalEntry,
 } from '../nutritionCalibrationStore';
+
+/**
+ * Calorie Estimator Popup
+ */
+function CalorieEstimatorPopup({ content, onClose }) {
+  const estimate = estimateCalories(content);
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div
+        className="bg-white rounded-2xl shadow-xl max-w-sm w-full max-h-[80vh] overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Flame size={18} className="text-orange-500" />
+            <span className="font-semibold text-gray-900">Estimated Calories</span>
+          </div>
+          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg">
+            <X size={18} className="text-gray-500" />
+          </button>
+        </div>
+
+        <div className="p-4">
+          {/* Total */}
+          <div className="text-center mb-4">
+            <span className="text-3xl font-bold text-gray-900">~{estimate.totalCalories}</span>
+            <span className="text-gray-500 ml-1">cal</span>
+            <p className="text-xs text-gray-400 mt-1">
+              {estimate.confidence === 'high' ? 'Good estimate' : estimate.confidence === 'medium' ? 'Moderate confidence' : 'Rough estimate'}
+            </p>
+          </div>
+
+          {/* Breakdown */}
+          {estimate.breakdown.length > 0 && (
+            <div className="mb-4">
+              <p className="text-xs font-medium text-gray-500 uppercase mb-2">Breakdown</p>
+              <div className="space-y-2">
+                {estimate.breakdown.map((item, idx) => (
+                  <div key={idx} className="flex justify-between text-sm">
+                    <span className="text-gray-700">{item.food} <span className="text-gray-400">({item.serving})</span></span>
+                    <span className="text-gray-600 font-medium">~{item.calories} cal</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Tips */}
+          {estimate.tips.length > 0 && (
+            <div className="bg-amber-50 border border-amber-100 rounded-lg p-3 mb-4">
+              <div className="flex gap-2">
+                <Info size={14} className="text-amber-600 flex-shrink-0 mt-0.5" />
+                <div className="text-xs text-amber-800">
+                  <p className="font-medium mb-1">Did you know?</p>
+                  {estimate.tips.map((tip, idx) => (
+                    <p key={idx}>{tip}</p>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Disclaimer */}
+          <p className="text-[10px] text-gray-400 text-center">
+            This is an estimate based on typical portions. Actual calories may vary based on preparation and exact quantities.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Clarifying Question Popup
+ */
+function ClarifyingQuestionPopup({ clarification, onAnswer, onDismiss, onClose }) {
+  const [selectedOption, setSelectedOption] = useState(null);
+
+  function handleSave() {
+    if (selectedOption !== null) {
+      onAnswer(clarification.options[selectedOption]);
+    }
+    onClose();
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div
+        className="bg-white rounded-2xl shadow-xl max-w-sm w-full"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <HelpCircle size={18} className="text-blue-500" />
+            <span className="font-medium text-gray-900">Quick question!</span>
+            <span className="text-xs text-gray-400">(optional)</span>
+          </div>
+          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg">
+            <X size={18} className="text-gray-500" />
+          </button>
+        </div>
+
+        <div className="p-4">
+          <p className="text-sm text-gray-700 mb-4">{clarification.question}</p>
+
+          <div className="space-y-2 mb-4">
+            {clarification.options.map((option, idx) => (
+              <button
+                key={idx}
+                onClick={() => setSelectedOption(idx)}
+                className={`w-full text-left px-3 py-2 rounded-lg border transition-colors ${
+                  selectedOption === idx
+                    ? 'border-blue-500 bg-blue-50 text-blue-700'
+                    : 'border-gray-200 hover:border-gray-300'
+                }`}
+              >
+                <span className="text-sm">{option.label}</span>
+              </button>
+            ))}
+          </div>
+
+          <div className="flex gap-2">
+            <button
+              onClick={handleSave}
+              disabled={selectedOption === null}
+              className="flex-1 px-3 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Save
+            </button>
+            <button
+              onClick={() => {
+                onDismiss(clarification.matchedFood);
+                onClose();
+              }}
+              className="px-3 py-2 text-gray-500 text-sm hover:bg-gray-100 rounded-lg"
+            >
+              Don't ask again
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Post-Calibration Options Modal
+ * Shown after 5-day calibration is complete
+ */
+function PostCalibrationOptionsModal({ onSelect, onClose }) {
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div
+        className="bg-white rounded-2xl shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="p-6">
+          {/* Header */}
+          <div className="text-center mb-6">
+            <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <PartyPopper className="w-8 h-8 text-emerald-600" />
+            </div>
+            <h2 className="text-xl font-bold text-gray-900 mb-2">Nutrition Profile Complete!</h2>
+            <p className="text-gray-600 text-sm">
+              Great job logging 5 days of meals. Your personalized nutrition insights are now unlocked!
+            </p>
+          </div>
+
+          {/* Question */}
+          <p className="text-center text-gray-700 font-medium mb-4">
+            Would you like to continue tracking your meals?
+          </p>
+
+          {/* Options */}
+          <div className="space-y-3">
+            {/* Detailed Tracking */}
+            <button
+              onClick={() => onSelect(TRACKING_MODES.DETAILED)}
+              className="w-full text-left p-4 rounded-xl border-2 border-gray-200 hover:border-emerald-300 hover:bg-emerald-50 transition-all group"
+            >
+              <div className="flex items-start gap-3">
+                <div className="p-2 bg-emerald-100 rounded-lg text-emerald-600 group-hover:bg-emerald-200">
+                  <ClipboardList size={20} />
+                </div>
+                <div>
+                  <p className="font-semibold text-gray-900">Detailed Tracking</p>
+                  <p className="text-sm text-gray-500">Continue meal-by-meal logging (same format as calibration)</p>
+                </div>
+              </div>
+            </button>
+
+            {/* Simple Journal */}
+            <button
+              onClick={() => onSelect(TRACKING_MODES.JOURNAL)}
+              className="w-full text-left p-4 rounded-xl border-2 border-gray-200 hover:border-blue-300 hover:bg-blue-50 transition-all group"
+            >
+              <div className="flex items-start gap-3">
+                <div className="p-2 bg-blue-100 rounded-lg text-blue-600 group-hover:bg-blue-200">
+                  <Pencil size={20} />
+                </div>
+                <div>
+                  <p className="font-semibold text-gray-900">Simple Daily Journal</p>
+                  <p className="text-sm text-gray-500">One text box per day to reflect on eating (quick and mindful)</p>
+                </div>
+              </div>
+            </button>
+
+            {/* Pause */}
+            <button
+              onClick={() => onSelect(TRACKING_MODES.PAUSED)}
+              className="w-full text-left p-4 rounded-xl border-2 border-gray-200 hover:border-gray-300 hover:bg-gray-50 transition-all group"
+            >
+              <div className="flex items-start gap-3">
+                <div className="p-2 bg-gray-100 rounded-lg text-gray-500 group-hover:bg-gray-200">
+                  <Lock size={20} />
+                </div>
+                <div>
+                  <p className="font-semibold text-gray-900">Pause Tracking</p>
+                  <p className="text-sm text-gray-500">I'm good for now, maybe later</p>
+                </div>
+              </div>
+            </button>
+          </div>
+
+          <p className="text-xs text-gray-400 text-center mt-4">
+            You can change this anytime in Settings
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Daily Journal Entry Component (for simple tracking mode)
+ */
+function DailyJournalEntry() {
+  const [content, setContent] = useState('');
+  const [saved, setSaved] = useState(false);
+  const textareaRef = useRef(null);
+
+  useEffect(() => {
+    const existing = getTodayJournalEntry();
+    if (existing) {
+      setContent(existing.content);
+    }
+  }, []);
+
+  // Auto-resize textarea
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 200) + 'px';
+    }
+  }, [content]);
+
+  function handleSave() {
+    const today = new Date().toISOString().split('T')[0];
+    saveDailyJournalEntry(today, content);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  }
+
+  const today = new Date();
+  const dateLabel = today.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-200 p-5">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="font-semibold text-gray-900">{dateLabel}</h3>
+        {saved && (
+          <span className="flex items-center gap-1 text-xs text-emerald-600">
+            <Check size={12} /> Saved
+          </span>
+        )}
+      </div>
+
+      <textarea
+        ref={textareaRef}
+        value={content}
+        onChange={(e) => setContent(e.target.value)}
+        placeholder="How was your eating today? What did you have for meals? Any reflections..."
+        className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none"
+        style={{ minHeight: '100px' }}
+      />
+
+      <div className="flex items-center justify-between mt-3">
+        <p className="text-xs text-gray-400">
+          Estimate based on your typical patterns
+        </p>
+        <button
+          onClick={handleSave}
+          disabled={!content.trim()}
+          className="px-4 py-2 bg-primary-600 text-white text-sm font-medium rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Save Entry
+        </button>
+      </div>
+    </div>
+  );
+}
 
 // Icons for each meal type
 const MEAL_ICONS = {
@@ -321,8 +634,92 @@ function SortableMealEntry({ meal, day, onContentChange, onRemove, onAdvisorActi
           disabled={disabled}
           placeholder={`What did you have for ${meal.label.toLowerCase()}? You can paste recipes, list items, or describe your meal...`}
         />
+
+        {/* Calorie & Clarification icons (only show when there's content) */}
+        {meal.content && meal.content.trim() && (
+          <MealEntryActions content={meal.content} mealId={meal.id} />
+        )}
       </div>
     </div>
+  );
+}
+
+/**
+ * Actions for a meal entry (calorie estimator, clarifying questions)
+ */
+function MealEntryActions({ content, mealId }) {
+  const [showCalories, setShowCalories] = useState(false);
+  const [showClarify, setShowClarify] = useState(false);
+  const [dismissedItems, setDismissedItems] = useState(() => {
+    try {
+      const saved = localStorage.getItem('health-advisor-clarify-dismissed');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const clarification = needsClarification(content);
+  const needsQuestion = clarification && !dismissedItems.includes(clarification.matchedFood);
+  const estimate = estimateCalories(content);
+  const hasEstimate = estimate.totalCalories > 0;
+
+  function handleDismissClarification(item) {
+    const updated = [...dismissedItems, item];
+    setDismissedItems(updated);
+    localStorage.setItem('health-advisor-clarify-dismissed', JSON.stringify(updated));
+  }
+
+  if (!hasEstimate && !needsQuestion) return null;
+
+  return (
+    <>
+      <div className="flex items-center gap-2 mt-2 pt-2 border-t border-gray-100">
+        {/* Calorie estimator icon */}
+        {hasEstimate && (
+          <button
+            onClick={() => setShowCalories(true)}
+            className="flex items-center gap-1 px-2 py-1 text-xs text-orange-600 hover:bg-orange-50 rounded-md transition-colors"
+            title="View calorie estimate"
+          >
+            <Flame size={12} />
+            <span>~{estimate.totalCalories} cal</span>
+          </button>
+        )}
+
+        {/* Clarifying question icon */}
+        {needsQuestion && (
+          <button
+            onClick={() => setShowClarify(true)}
+            className="flex items-center gap-1 px-2 py-1 text-xs text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
+            title="Help us estimate better"
+          >
+            <HelpCircle size={12} />
+            <span>Clarify portion</span>
+          </button>
+        )}
+      </div>
+
+      {/* Popups */}
+      {showCalories && (
+        <CalorieEstimatorPopup
+          content={content}
+          onClose={() => setShowCalories(false)}
+        />
+      )}
+
+      {showClarify && clarification && (
+        <ClarifyingQuestionPopup
+          clarification={clarification}
+          onAnswer={(option) => {
+            // Could update the estimate with the multiplier here
+            console.log('Selected option:', option);
+          }}
+          onDismiss={handleDismissClarification}
+          onClose={() => setShowClarify(false)}
+        />
+      )}
+    </>
   );
 }
 
@@ -915,6 +1312,26 @@ export default function NutritionCalibration({ onComplete, compact = false, prof
   const [showDismissPrompt, setShowDismissPrompt] = useState(false);
   const [hasAccepted, setHasAccepted] = useState(false);
   const [showMealSetup, setShowMealSetup] = useState(false);
+  const [showTrackingOptions, setShowTrackingOptions] = useState(false);
+  const [trackingMode, setTrackingModeState] = useState(() => getTrackingMode());
+
+  // Check if calibration is complete but user hasn't chosen tracking mode
+  const calibrationComplete = isCalibrationComplete();
+  const needsTrackingChoice = calibrationComplete && !hasChosenTrackingMode();
+
+  // Show tracking options modal if calibration just completed
+  useEffect(() => {
+    if (needsTrackingChoice && !showTrackingOptions) {
+      setShowTrackingOptions(true);
+    }
+  }, [needsTrackingChoice]);
+
+  // Handle tracking mode selection
+  function handleSelectTrackingMode(mode) {
+    setTrackingMode(mode);
+    setTrackingModeState(mode);
+    setShowTrackingOptions(false);
+  }
 
   // Check if this is Level 1 (chill) user and first view
   const isLevel1 = profile?.onboardingDepth === 'chill';
@@ -1211,6 +1628,85 @@ export default function NutritionCalibration({ onComplete, compact = false, prof
           Track 5 days of meals to unlock your Daily Nutritional Profile with personalized insights.
         </p>
       </div>
+
+      {/* Post-calibration options modal */}
+      {showTrackingOptions && (
+        <PostCalibrationOptionsModal
+          onSelect={handleSelectTrackingMode}
+          onClose={() => setShowTrackingOptions(false)}
+        />
+      )}
     </div>
   );
+}
+
+/**
+ * Post-Calibration Nutrition Tracker
+ * Shows either detailed tracking, simple journal, or paused state
+ */
+export function PostCalibrationTracker({ profile }) {
+  const trackingMode = getTrackingMode();
+  const [showOptions, setShowOptions] = useState(false);
+
+  // If no tracking mode chosen yet, don't show anything
+  if (!trackingMode) return null;
+
+  // Paused mode - show minimal UI with option to resume
+  if (trackingMode === TRACKING_MODES.PAUSED) {
+    return (
+      <div className="bg-gray-50 rounded-2xl border border-gray-200 p-5">
+        <div className="text-center">
+          <Lock size={24} className="text-gray-400 mx-auto mb-2" />
+          <p className="text-sm text-gray-600 mb-3">Nutrition tracking is paused</p>
+          <button
+            onClick={() => setShowOptions(true)}
+            className="text-sm text-primary-600 hover:text-primary-700 font-medium"
+          >
+            Resume tracking
+          </button>
+        </div>
+        {showOptions && (
+          <PostCalibrationOptionsModal
+            onSelect={(mode) => {
+              setTrackingMode(mode);
+              setShowOptions(false);
+              window.location.reload();
+            }}
+            onClose={() => setShowOptions(false)}
+          />
+        )}
+      </div>
+    );
+  }
+
+  // Journal mode - show daily journal entry
+  if (trackingMode === TRACKING_MODES.JOURNAL) {
+    return (
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-semibold text-gray-900">Daily Nutrition Journal</h3>
+          <button
+            onClick={() => setShowOptions(true)}
+            className="text-xs text-gray-500 hover:text-gray-700"
+          >
+            Change mode
+          </button>
+        </div>
+        <DailyJournalEntry />
+        {showOptions && (
+          <PostCalibrationOptionsModal
+            onSelect={(mode) => {
+              setTrackingMode(mode);
+              setShowOptions(false);
+              window.location.reload();
+            }}
+            onClose={() => setShowOptions(false)}
+          />
+        )}
+      </div>
+    );
+  }
+
+  // Detailed mode - handled by regular NutritionCalibration component
+  return null;
 }

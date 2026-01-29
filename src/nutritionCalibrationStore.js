@@ -10,11 +10,95 @@
 
 import { getItem, setItem, removeItem } from './storageHelper';
 import { getProfile } from './store';
+import { logActivity, ACTIVITY_TYPES } from './activityLogStore';
 
 const STORAGE_KEY = 'health-advisor-nutrition-calibration';
 const PROFILE_KEY = 'health-advisor-nutrition-profile';
 const DISMISSED_KEY = 'health-advisor-calibration-dismissed';
 const MEAL_PATTERN_KEY = 'health-advisor-meal-pattern';
+const TRACKING_MODE_KEY = 'health-advisor-tracking-mode';
+const DAILY_JOURNAL_KEY = 'health-advisor-daily-journal';
+
+// Tracking modes after calibration
+export const TRACKING_MODES = {
+  DETAILED: 'detailed',    // Continue meal-by-meal logging
+  JOURNAL: 'journal',      // Simple daily journal entry
+  PAUSED: 'paused',        // Not tracking
+};
+
+/**
+ * Get the user's chosen tracking mode (post-calibration)
+ */
+export function getTrackingMode() {
+  try {
+    const mode = getItem(TRACKING_MODE_KEY);
+    return mode ? JSON.parse(mode) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Set the tracking mode
+ */
+export function setTrackingMode(mode) {
+  setItem(TRACKING_MODE_KEY, JSON.stringify(mode));
+}
+
+/**
+ * Check if user has chosen a tracking mode
+ */
+export function hasChosenTrackingMode() {
+  return getTrackingMode() !== null;
+}
+
+/**
+ * Get daily journal entries
+ */
+export function getDailyJournal() {
+  try {
+    const data = getItem(DAILY_JOURNAL_KEY);
+    return data ? JSON.parse(data) : {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Save a daily journal entry
+ */
+export function saveDailyJournalEntry(date, content) {
+  const journal = getDailyJournal();
+  journal[date] = {
+    content,
+    updatedAt: new Date().toISOString(),
+  };
+  setItem(DAILY_JOURNAL_KEY, JSON.stringify(journal));
+
+  // Also log as activity for check-in synthesis
+  if (content && content.trim()) {
+    logActivity({
+      type: ACTIVITY_TYPES.NUTRITION,
+      rawText: content,
+      summary: 'Daily nutrition journal',
+      data: {
+        journalEntry: true,
+        date,
+      },
+    });
+  }
+
+  return journal;
+}
+
+/**
+ * Get today's journal entry
+ */
+export function getTodayJournalEntry() {
+  const today = new Date().toISOString().split('T')[0];
+  const journal = getDailyJournal();
+  return journal[today] || null;
+}
 
 // Days to track (Monday-Friday)
 export const CALIBRATION_DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'];
@@ -342,12 +426,15 @@ export function updateMealEntry(day, mealType, value) {
 
 /**
  * Update a specific meal by ID in the meals array
+ * Also logs the entry as a nutrition activity for Focus Goal tracking
  */
 export function updateMealById(day, mealId, updates) {
   const data = getCalibrationData();
   if (data.days[day]?.meals) {
     const mealIndex = data.days[day].meals.findIndex(m => m.id === mealId);
     if (mealIndex !== -1) {
+      const previousContent = data.days[day].meals[mealIndex].content;
+
       data.days[day].meals[mealIndex] = {
         ...data.days[day].meals[mealIndex],
         ...updates,
@@ -359,12 +446,46 @@ export function updateMealById(day, mealId, updates) {
         if (data.days[day][mealType] !== undefined) {
           data.days[day][mealType] = updates.content;
         }
+
+        // Log as nutrition activity for Focus Goal tracking (only if new content)
+        if (updates.content && updates.content.trim() && updates.content !== previousContent) {
+          const mealLabel = data.days[day].meals[mealIndex].label || mealType;
+          logNutritionActivity(mealLabel, updates.content, day);
+        }
       }
 
       saveCalibrationData(data);
     }
   }
   return data;
+}
+
+/**
+ * Log a nutrition entry as an activity for Focus Goal tracking
+ */
+function logNutritionActivity(mealLabel, content, day) {
+  const contentLower = content.toLowerCase();
+
+  // Create activity for tracking
+  const activity = {
+    type: ACTIVITY_TYPES.NUTRITION,
+    rawText: `${mealLabel}: ${content}`,
+    summary: `Logged ${mealLabel.toLowerCase()}`,
+    data: {
+      meal: mealLabel,
+      content: content,
+      day: day,
+    },
+  };
+
+  // Check for specific items that might match Focus Goals
+  // Keywords that might indicate protein supplement usage
+  const proteinKeywords = ['protein', 'vega', 'whey', 'shake', 'scoop', 'powder'];
+  if (proteinKeywords.some(kw => contentLower.includes(kw))) {
+    activity.data.hasProteinSupplement = true;
+  }
+
+  logActivity(activity);
 }
 
 /**

@@ -59,6 +59,58 @@ function getGreeting() {
   return 'Good evening';
 }
 
+// Goal Reminder Component - Subtle reminder of user's main goals
+function GoalReminder({ profile }) {
+  const [dismissed, setDismissed] = useState(false);
+
+  if (dismissed) return null;
+
+  // Get user's goals from profile
+  const goals = profile?.goals || [];
+  const goalDetails = profile?.goalDetails || {};
+
+  if (goals.length === 0) return null;
+
+  // Create a summary of goals
+  const goalLabels = {
+    weightLoss: 'Lose body fat',
+    strength: 'Build strength',
+    endurance: 'Improve endurance',
+    sleep: 'Better sleep',
+    nutrition: 'Better nutrition',
+  };
+
+  // Get first goal detail or fallback to label
+  const primaryGoal = goalDetails[goals[0]] || goalLabels[goals[0]] || goals[0];
+  const additionalGoals = goals.slice(1).map(g => goalLabels[g] || g);
+
+  return (
+    <div className="bg-indigo-50/70 border border-indigo-100 rounded-xl px-4 py-3 mb-4">
+      <div className="flex items-start gap-3">
+        <Target size={16} className="text-indigo-500 mt-0.5 flex-shrink-0" />
+        <div className="flex-1 min-w-0">
+          <p className="text-sm text-indigo-800">
+            <span className="font-medium">Working towards:</span>{' '}
+            <span className="text-indigo-700">
+              {primaryGoal.length > 60 ? primaryGoal.substring(0, 60) + '...' : primaryGoal}
+              {additionalGoals.length > 0 && (
+                <span className="text-indigo-500"> • {additionalGoals.join(' • ')}</span>
+              )}
+            </span>
+          </p>
+        </div>
+        <button
+          onClick={() => setDismissed(true)}
+          className="p-1 text-indigo-400 hover:text-indigo-600 hover:bg-indigo-100 rounded transition-colors flex-shrink-0"
+          title="Dismiss for today"
+        >
+          <X size={14} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // Format date in simple style: "Wednesday, Jan 28 · Today"
 function formatSimpleDate(date = new Date()) {
   const dayName = date.toLocaleDateString('en-US', { weekday: 'long' });
@@ -103,7 +155,7 @@ function getWinIcon(iconName) {
 // Quick Entry Component
 function QuickEntryBox({ onSubmit, isLoading }) {
   const [input, setInput] = useState('');
-  const inputRef = useRef(null);
+  const textareaRef = useRef(null);
 
   const tips = [
     '"For breakfast I had oatmeal with honey and two eggs"',
@@ -113,6 +165,14 @@ function QuickEntryBox({ onSubmit, isLoading }) {
   ];
   const [tipIndex] = useState(Math.floor(Math.random() * tips.length));
 
+  // Auto-resize textarea
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 150) + 'px';
+    }
+  }, [input]);
+
   function handleSubmit(e) {
     e.preventDefault();
     if (!input.trim() || isLoading) return;
@@ -120,23 +180,33 @@ function QuickEntryBox({ onSubmit, isLoading }) {
     setInput('');
   }
 
+  function handleKeyDown(e) {
+    // Submit on Enter without Shift
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSubmit(e);
+    }
+  }
+
   return (
     <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-4">
       <form onSubmit={handleSubmit}>
-        <div className="flex items-center gap-3">
-          <input
-            ref={inputRef}
-            type="text"
+        <div className="flex items-end gap-3">
+          <textarea
+            ref={textareaRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
             placeholder="Log a meal, workout, or anything..."
-            className="flex-1 px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+            className="flex-1 px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none overflow-hidden"
+            style={{ minHeight: '48px' }}
+            rows={1}
             disabled={isLoading}
           />
           <button
             type="submit"
             disabled={!input.trim() || isLoading}
-            className="p-3 bg-primary-600 text-white rounded-xl hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="p-3 bg-primary-600 text-white rounded-xl hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex-shrink-0"
           >
             {isLoading ? (
               <Loader2 size={20} className="animate-spin" />
@@ -223,7 +293,7 @@ function DraggableMealSlot({ meal, dayKey, index, onUpdate, onDragStart, onDragO
       onDragStart={(e) => onDragStart(e, index)}
       onDragOver={(e) => onDragOver(e, index)}
       onDragEnd={onDragEnd}
-      className={`flex items-center gap-2 p-2 rounded-lg transition-all cursor-move ${
+      className={`flex items-start gap-2 p-2 rounded-lg transition-all cursor-move ${
         isDragging
           ? 'opacity-50 bg-amber-100 border-2 border-dashed border-amber-400'
           : hasMeal
@@ -246,18 +316,18 @@ function DraggableMealSlot({ meal, dayKey, index, onUpdate, onDragStart, onDragO
       {/* Content - Click to edit */}
       <button
         onClick={() => setIsEditing(true)}
-        className="flex-1 flex items-center gap-2 text-left min-w-0"
+        className="flex-1 flex items-start gap-2 text-left min-w-0"
       >
-        <span className="text-sm text-gray-600 font-medium w-24 flex-shrink-0">
+        <span className="text-sm text-gray-600 font-medium w-24 flex-shrink-0 pt-0.5">
           {meal.label}:
         </span>
-        <span className={`text-sm flex-1 truncate ${
+        <span className={`text-sm flex-1 ${
           hasMeal ? 'text-gray-800' : 'text-gray-400 italic'
         }`}>
           {hasMeal ? meal.content : 'Tap to add'}
         </span>
         {hasMeal && (
-          <Edit2 size={12} className="text-gray-400 flex-shrink-0" />
+          <Edit2 size={12} className="text-gray-400 flex-shrink-0 mt-1" />
         )}
       </button>
 
@@ -526,10 +596,10 @@ function NutritionCalibrationCard() {
                     </div>
                     <div className="space-y-1">
                       {dayMeals.filter(m => m.content?.trim()).map(meal => (
-                        <div key={meal.id} className="flex items-center gap-2 text-sm">
-                          <Check size={12} className="text-green-500 flex-shrink-0" />
-                          <span className="text-gray-500 font-medium">{meal.label}:</span>
-                          <span className="text-gray-700 truncate">{meal.content}</span>
+                        <div key={meal.id} className="flex items-start gap-2 text-sm">
+                          <Check size={12} className="text-green-500 flex-shrink-0 mt-0.5" />
+                          <span className="text-gray-500 font-medium flex-shrink-0">{meal.label}:</span>
+                          <span className="text-gray-700">{meal.content}</span>
                         </div>
                       ))}
                     </div>
@@ -1347,11 +1417,12 @@ export default function HomePage({ onNavigate, onOpenCheckIn }) {
   return (
     <div className="bg-gray-50/50 pb-8">
       <div className="max-w-2xl mx-auto px-4 py-6 space-y-5">
-        {/* 1. Greeting + Quick Entry */}
+        {/* 1. Greeting + Goal Reminder + Quick Entry */}
         <section>
           <h1 className="text-2xl font-bold text-gray-900 mb-4">
             {getGreeting()}, {profile?.name?.split(' ')[0] || 'there'}
           </h1>
+          <GoalReminder profile={profile} />
           <QuickEntryBox onSubmit={handleQuickEntry} isLoading={isLoading} />
         </section>
 
