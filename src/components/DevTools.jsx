@@ -429,8 +429,18 @@ export default function DevTools({ isModal = false, onClose }) {
       errors: 0,
     };
 
+    // Log ALL keys in the parsed JSON for debugging
+    console.log('=== IMPORT DEBUG ===');
+    console.log('All keys in imported JSON:', Object.keys(parsed));
+    Object.entries(parsed).forEach(([k, v]) => {
+      const preview = typeof v === 'string' ? v.substring(0, 50) : JSON.stringify(v).substring(0, 50);
+      console.log(`  ${k}: ${preview}...`);
+    });
+    console.log('===================');
+
     // Get the active profile ID for localStorage keys
     const profileId = getActiveProfileId();
+    console.log('Target profile ID:', profileId);
 
     // FIRST: Clear all existing data AND backup for this profile to ensure clean import
     console.log('Clearing existing data and backup for profile:', profileId);
@@ -507,8 +517,25 @@ export default function DevTools({ isModal = false, onClose }) {
     try {
       // Import Profile data
       setImportProgress({ status: 'importing', current: 'Profile', counts });
-      const profileData = getData('health-advisor-profile');
+      let profileData = getData('health-advisor-profile');
+
+      // Fallback: look for ANY key ending with "health-advisor-profile"
+      if (!profileData) {
+        console.log('Profile not found with standard lookup, trying fallback...');
+        const profileKey = Object.keys(parsed).find(k =>
+          k.endsWith('health-advisor-profile') ||
+          k === 'profile' ||
+          (k.includes('profile') && !k.includes('profiles') && !k.includes('active'))
+        );
+        if (profileKey) {
+          console.log('Found profile with fallback key:', profileKey);
+          const raw = parsed[profileKey];
+          profileData = typeof raw === 'string' ? JSON.parse(raw) : raw;
+        }
+      }
+
       if (profileData) {
+        console.log('Profile data found:', profileData.name, profileData);
         // Save to Supabase
         const { error } = await dataService.upsertProfile(user.id, profileData);
         if (error) {
@@ -524,6 +551,9 @@ export default function DevTools({ isModal = false, onClose }) {
             renameProfile(profileId, profileData.name);
           }
         }
+      } else {
+        console.log('NO PROFILE DATA FOUND in import!');
+        console.log('Available keys:', Object.keys(parsed));
       }
 
       // Import Activities
