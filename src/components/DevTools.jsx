@@ -23,7 +23,11 @@ import {
   Star,
   BookOpen,
   Sparkles,
+  Database,
+  Loader2,
 } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import * as dataService from '../lib/dataService';
 import {
   getProfiles,
   getActiveProfile,
@@ -51,10 +55,13 @@ import { getWorkouts, getWorkoutsThisWeek } from '../workoutStore';
 import { getItem, setItem } from '../storageHelper';
 import TEST_PROFILES from '../testProfiles';
 
-// Only show in development
+// Show in development, or in production with ?devtools=true URL param
 const isDev = import.meta.env.DEV;
+const hasDevToolsParam = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('devtools') === 'true';
+const showDevTools = isDev || hasDevToolsParam;
 
 export default function DevTools({ isModal = false, onClose }) {
+  const { user } = useAuth();
   const [isOpen, setIsOpen] = useState(isModal); // If modal, start open
   const [activeTab, setActiveTab] = useState('profiles');
   const [loading, setLoading] = useState(null);
@@ -63,6 +70,9 @@ export default function DevTools({ isModal = false, onClose }) {
   const [profileData, setProfileData] = useState(null);
   const [importError, setImportError] = useState(null);
   const [activityDebugData, setActivityDebugData] = useState(null);
+  const [showLegacyImport, setShowLegacyImport] = useState(false);
+  const [legacyImportJson, setLegacyImportJson] = useState('');
+  const [importProgress, setImportProgress] = useState(null);
   const fileInputRef = useRef(null);
 
   // Sync isOpen with isModal prop
@@ -89,7 +99,7 @@ export default function DevTools({ isModal = false, onClose }) {
     onClose?.();
   }
 
-  if (!isDev) return null;
+  if (!showDevTools) return null;
 
   function showNotification(message, type = 'success') {
     setNotification({ message, type });
@@ -378,6 +388,169 @@ export default function DevTools({ isModal = false, onClose }) {
     deleteAllTestProfiles();
     showNotification('Test profiles deleted!');
     setTimeout(() => window.location.reload(), 500);
+  }
+
+  async function handleLegacyImport() {
+    if (!user?.id) {
+      showNotification('You must be logged in to import data', 'error');
+      return;
+    }
+
+    if (!legacyImportJson.trim()) {
+      showNotification('Please paste your exported JSON data', 'error');
+      return;
+    }
+
+    let parsed;
+    try {
+      parsed = JSON.parse(legacyImportJson);
+    } catch (err) {
+      showNotification('Invalid JSON format. Please check your data.', 'error');
+      return;
+    }
+
+    setImportProgress({ status: 'importing', current: '', counts: {} });
+    const counts = {
+      profile: 0,
+      activities: 0,
+      playbook: 0,
+      conversations: 0,
+      insights: 0,
+      checkins: 0,
+      errors: 0,
+    };
+
+    try {
+      // Import Profile data
+      setImportProgress({ status: 'importing', current: 'Profile', counts });
+      const profileData = parsed['health-advisor-profile'] || parsed['profile'];
+      if (profileData) {
+        const profile = typeof profileData === 'string' ? JSON.parse(profileData) : profileData;
+        const { error } = await dataService.upsertProfile(user.id, profile);
+        if (error) {
+          console.error('Profile import error:', error);
+          counts.errors++;
+        } else {
+          counts.profile = 1;
+        }
+      }
+
+      // Import Activities
+      setImportProgress({ status: 'importing', current: 'Activities', counts });
+      const activitiesData = parsed['health-advisor-activities'] || parsed['activities'];
+      if (activitiesData) {
+        const activities = typeof activitiesData === 'string' ? JSON.parse(activitiesData) : activitiesData;
+        if (Array.isArray(activities)) {
+          for (const activity of activities) {
+            const { error } = await dataService.addActivity(user.id, activity);
+            if (error) {
+              console.error('Activity import error:', error);
+              counts.errors++;
+            } else {
+              counts.activities++;
+            }
+          }
+        }
+      }
+
+      // Import Playbook
+      setImportProgress({ status: 'importing', current: 'Playbook', counts });
+      const playbookData = parsed['health-advisor-playbook'] || parsed['playbook'];
+      if (playbookData) {
+        const playbook = typeof playbookData === 'string' ? JSON.parse(playbookData) : playbookData;
+        const { error } = await dataService.upsertPlaybook(user.id, playbook);
+        if (error) {
+          console.error('Playbook import error:', error);
+          counts.errors++;
+        } else {
+          counts.playbook = 1;
+        }
+      }
+
+      // Import Chat Conversations
+      setImportProgress({ status: 'importing', current: 'Conversations', counts });
+      const chatsData = parsed['health-advisor-chats'] || parsed['conversations'] || parsed['chat-conversations'];
+      if (chatsData) {
+        const chats = typeof chatsData === 'string' ? JSON.parse(chatsData) : chatsData;
+        if (Array.isArray(chats)) {
+          for (const chat of chats) {
+            const { error } = await dataService.upsertConversation(user.id, chat);
+            if (error) {
+              console.error('Conversation import error:', error);
+              counts.errors++;
+            } else {
+              counts.conversations++;
+            }
+          }
+        }
+      }
+
+      // Import Learned Insights
+      setImportProgress({ status: 'importing', current: 'Learned Insights', counts });
+      const insightsData = parsed['health-advisor-learned'] || parsed['learned-insights'] || parsed['insights'];
+      if (insightsData) {
+        const insights = typeof insightsData === 'string' ? JSON.parse(insightsData) : insightsData;
+        if (Array.isArray(insights)) {
+          for (const insight of insights) {
+            const { error } = await dataService.addLearnedInsight(user.id, { text: insight.text || insight.insight, category: insight.category, confidence: insight.confidence });
+            if (error) {
+              console.error('Insight import error:', error);
+              counts.errors++;
+            } else {
+              counts.insights++;
+            }
+          }
+        }
+      }
+
+      // Import Weekly Check-ins
+      setImportProgress({ status: 'importing', current: 'Check-ins', counts });
+      const checkinsData = parsed['health-advisor-checkins'] || parsed['weekly-checkins'] || parsed['checkins'];
+      if (checkinsData) {
+        const checkins = typeof checkinsData === 'string' ? JSON.parse(checkinsData) : checkinsData;
+        if (Array.isArray(checkins)) {
+          for (const checkin of checkins) {
+            const { error } = await dataService.upsertCheckin(user.id, checkin);
+            if (error) {
+              console.error('Checkin import error:', error);
+              counts.errors++;
+            } else {
+              counts.checkins++;
+            }
+          }
+        }
+      }
+
+      // Import Nutrition Calibration
+      const nutritionData = parsed['health-advisor-nutrition'] || parsed['nutrition-calibration'];
+      if (nutritionData) {
+        const nutrition = typeof nutritionData === 'string' ? JSON.parse(nutritionData) : nutritionData;
+        if (nutrition.days) {
+          for (const [dayName, dayData] of Object.entries(nutrition.days)) {
+            // Convert day name to date (approximate based on startDate if available)
+            const startDate = nutrition.startDate || new Date().toISOString().split('T')[0];
+            await dataService.upsertNutritionDay(user.id, startDate, dayData, dayData.completed);
+          }
+        }
+      }
+
+      setImportProgress({ status: 'complete', current: '', counts });
+
+      const successMsg = `Imported: ${counts.profile} profile, ${counts.activities} activities, ${counts.playbook} playbook, ${counts.conversations} conversations, ${counts.insights} insights, ${counts.checkins} check-ins${counts.errors > 0 ? ` (${counts.errors} errors)` : ''}`;
+      showNotification(successMsg, counts.errors > 0 ? 'info' : 'success');
+
+      // Close modal after short delay
+      setTimeout(() => {
+        setShowLegacyImport(false);
+        setLegacyImportJson('');
+        setImportProgress(null);
+      }, 2000);
+
+    } catch (err) {
+      console.error('Legacy import error:', err);
+      setImportProgress({ status: 'error', current: err.message, counts });
+      showNotification(`Import failed: ${err.message}`, 'error');
+    }
   }
 
   const activeProfile = getActiveProfile();
@@ -717,6 +890,19 @@ export default function DevTools({ isModal = false, onClose }) {
                       onChange={handleImportProfile}
                       className="hidden"
                     />
+
+                    <button
+                      onClick={() => setShowLegacyImport(true)}
+                      className="w-full p-3 rounded-xl border-2 border-dashed border-violet-300 hover:border-violet-400 hover:bg-violet-50/50 text-left transition-all flex items-center gap-3"
+                    >
+                      <div className="p-2 bg-violet-100 rounded-lg">
+                        <Database size={16} className="text-violet-600" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-violet-900">Import Legacy Data to Supabase</p>
+                        <p className="text-xs text-violet-600">Migrate old localStorage data to cloud storage</p>
+                      </div>
+                    </button>
                   </div>
 
                   {/* Danger Zone */}
@@ -1054,6 +1240,138 @@ export default function DevTools({ isModal = false, onClose }) {
                 Close
               </button>
             </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Legacy Import Modal */}
+      {showLegacyImport && createPortal(
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[110] p-4">
+          <div className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-violet-50 to-purple-50">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-violet-100 rounded-lg">
+                  <Database size={20} className="text-violet-600" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900">Import Legacy Data</h2>
+                  <p className="text-xs text-gray-500">Migrate localStorage data to Supabase</p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setShowLegacyImport(false);
+                  setLegacyImportJson('');
+                  setImportProgress(null);
+                }}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <X size={20} className="text-gray-500" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-auto p-6">
+              {!importProgress ? (
+                <>
+                  <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-xl">
+                    <p className="text-sm text-blue-800">
+                      <strong>Instructions:</strong> Paste your exported localStorage JSON below.
+                      This will import your profile, activities, playbook, conversations, insights, and check-ins to Supabase.
+                    </p>
+                  </div>
+
+                  <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-xl">
+                    <p className="text-sm text-amber-800">
+                      <strong>Note:</strong> If you haven't exported your data yet, visit{' '}
+                      <code className="bg-amber-100 px-1 rounded">/export-localstorage.html</code>{' '}
+                      on your old app to get your JSON data.
+                    </p>
+                  </div>
+
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Paste your exported JSON:
+                  </label>
+                  <textarea
+                    value={legacyImportJson}
+                    onChange={(e) => setLegacyImportJson(e.target.value)}
+                    placeholder='{"health-advisor-profile": {...}, "health-advisor-activities": [...], ...}'
+                    className="w-full h-64 p-4 border border-gray-300 rounded-xl font-mono text-xs resize-none focus:ring-2 focus:ring-violet-500 focus:border-violet-500"
+                  />
+                </>
+              ) : (
+                <div className="py-8">
+                  {importProgress.status === 'importing' && (
+                    <div className="text-center">
+                      <Loader2 size={48} className="mx-auto text-violet-600 animate-spin mb-4" />
+                      <p className="text-lg font-medium text-gray-900 mb-2">
+                        Importing {importProgress.current}...
+                      </p>
+                      <div className="text-sm text-gray-500 space-y-1">
+                        {importProgress.counts.profile > 0 && <p>✓ Profile imported</p>}
+                        {importProgress.counts.activities > 0 && <p>✓ {importProgress.counts.activities} activities imported</p>}
+                        {importProgress.counts.playbook > 0 && <p>✓ Playbook imported</p>}
+                        {importProgress.counts.conversations > 0 && <p>✓ {importProgress.counts.conversations} conversations imported</p>}
+                        {importProgress.counts.insights > 0 && <p>✓ {importProgress.counts.insights} insights imported</p>}
+                        {importProgress.counts.checkins > 0 && <p>✓ {importProgress.counts.checkins} check-ins imported</p>}
+                      </div>
+                    </div>
+                  )}
+
+                  {importProgress.status === 'complete' && (
+                    <div className="text-center">
+                      <div className="w-16 h-16 mx-auto bg-emerald-100 rounded-full flex items-center justify-center mb-4">
+                        <Check size={32} className="text-emerald-600" />
+                      </div>
+                      <p className="text-lg font-medium text-gray-900 mb-4">Import Complete!</p>
+                      <div className="text-sm text-gray-600 space-y-1 bg-gray-50 p-4 rounded-xl">
+                        <p><strong>Profile:</strong> {importProgress.counts.profile > 0 ? '✓ Imported' : '- None'}</p>
+                        <p><strong>Activities:</strong> {importProgress.counts.activities}</p>
+                        <p><strong>Playbook:</strong> {importProgress.counts.playbook > 0 ? '✓ Imported' : '- None'}</p>
+                        <p><strong>Conversations:</strong> {importProgress.counts.conversations}</p>
+                        <p><strong>Insights:</strong> {importProgress.counts.insights}</p>
+                        <p><strong>Check-ins:</strong> {importProgress.counts.checkins}</p>
+                        {importProgress.counts.errors > 0 && (
+                          <p className="text-red-600"><strong>Errors:</strong> {importProgress.counts.errors}</p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {importProgress.status === 'error' && (
+                    <div className="text-center">
+                      <div className="w-16 h-16 mx-auto bg-red-100 rounded-full flex items-center justify-center mb-4">
+                        <AlertTriangle size={32} className="text-red-600" />
+                      </div>
+                      <p className="text-lg font-medium text-gray-900 mb-2">Import Failed</p>
+                      <p className="text-sm text-red-600">{importProgress.current}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {!importProgress && (
+              <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-2">
+                <button
+                  onClick={() => {
+                    setShowLegacyImport(false);
+                    setLegacyImportJson('');
+                  }}
+                  className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm font-medium"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleLegacyImport}
+                  disabled={!legacyImportJson.trim()}
+                  className="px-4 py-2 bg-violet-600 text-white rounded-lg hover:bg-violet-700 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                >
+                  <Upload size={16} />
+                  Import to Supabase
+                </button>
+              </div>
+            )}
           </div>
         </div>,
         document.body

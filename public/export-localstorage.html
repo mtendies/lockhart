@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Health Coach - Export LocalStorage Data</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    h1 { color: #1f2937; margin-bottom: 8px; }
+    .subtitle { color: #6b7280; margin-bottom: 24px; }
+    .instructions {
+      background: #fef3c7;
+      border: 1px solid #f59e0b;
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 24px;
+    }
+    .instructions h3 { margin: 0 0 8px 0; color: #92400e; }
+    .instructions p { margin: 0; color: #78350f; font-size: 14px; }
+    .actions {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 24px;
+      flex-wrap: wrap;
+    }
+    button {
+      padding: 12px 24px;
+      font-size: 14px;
+      font-weight: 600;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .btn-primary {
+      background: #4f46e5;
+      color: white;
+    }
+    .btn-primary:hover { background: #4338ca; }
+    .btn-secondary {
+      background: #e5e7eb;
+      color: #374151;
+    }
+    .btn-secondary:hover { background: #d1d5db; }
+    .btn-success {
+      background: #10b981;
+      color: white;
+    }
+    .btn-success:hover { background: #059669; }
+    .data-section {
+      background: white;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 16px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    .data-section h2 {
+      font-size: 16px;
+      color: #374151;
+      margin: 0 0 4px 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .data-section .key {
+      font-size: 12px;
+      color: #9ca3af;
+      font-family: monospace;
+      margin-bottom: 12px;
+    }
+    .data-section pre {
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 16px;
+      overflow-x: auto;
+      font-size: 12px;
+      max-height: 400px;
+      overflow-y: auto;
+    }
+    .copy-btn {
+      padding: 6px 12px;
+      font-size: 12px;
+      background: #f3f4f6;
+      color: #374151;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+    }
+    .copy-btn:hover { background: #e5e7eb; }
+    .badge {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 12px;
+      background: #dbeafe;
+      color: #1e40af;
+    }
+    .empty { color: #9ca3af; font-style: italic; }
+    .toast {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background: #1f2937;
+      color: white;
+      padding: 12px 20px;
+      border-radius: 8px;
+      font-size: 14px;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+    .toast.show { opacity: 1; }
+    #allDataPre {
+      display: none;
+      margin-top: 16px;
+    }
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+    .summary-card {
+      background: white;
+      padding: 16px;
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    .summary-card .label { font-size: 12px; color: #6b7280; }
+    .summary-card .value { font-size: 24px; font-weight: 600; color: #1f2937; }
+  </style>
+</head>
+<body>
+  <h1>📦 Export LocalStorage Data</h1>
+  <p class="subtitle">View and export all your Health Coach data stored in this browser</p>
+
+  <div class="instructions">
+    <h3>⚠️ Important</h3>
+    <p>This page must be opened from the same domain as the app (localhost:5173) to access the localStorage data.
+       If you see no data, make sure you're running <code>npm run dev</code> and open this file via the dev server.</p>
+  </div>
+
+  <div class="summary" id="summary"></div>
+
+  <div class="actions">
+    <button class="btn-primary" onclick="copyAllData()">📋 Copy All Data to Clipboard</button>
+    <button class="btn-success" onclick="downloadAllData()">💾 Download as JSON</button>
+    <button class="btn-secondary" onclick="toggleRawView()">👁️ Toggle Raw JSON View</button>
+  </div>
+
+  <pre id="allDataPre"></pre>
+
+  <div id="dataContainer"></div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    // Health Coach localStorage keys
+    const KNOWN_KEYS = [
+      'health-advisor-profile',
+      'health-advisor-playbook',
+      'health-advisor-notes',
+      'health-advisor-checkins',
+      'health-advisor-activities',
+      'health-advisor-chats',
+      'health-advisor-bookmarks',
+      'health-advisor-learned-insights',
+      'health-advisor-grocery',
+      'health-advisor-swaps',
+      'health-advisor-nutrition-calibration',
+      'health-advisor-suggestions',
+      'health-advisor-weekly-progress',
+      'health-advisor-tracking',
+      'health-advisor-profiles',
+      'health-advisor-active-profile',
+    ];
+
+    const KEY_LABELS = {
+      'health-advisor-profile': '👤 User Profile',
+      'health-advisor-playbook': '📘 Playbook',
+      'health-advisor-notes': '📝 Advisor Notes',
+      'health-advisor-checkins': '✅ Weekly Check-ins',
+      'health-advisor-activities': '🏃 Activity Logs',
+      'health-advisor-chats': '💬 Chat Conversations',
+      'health-advisor-bookmarks': '🔖 Bookmarks',
+      'health-advisor-learned-insights': '💡 Learned Insights',
+      'health-advisor-grocery': '🛒 Grocery Data',
+      'health-advisor-swaps': '🔄 Grocery Swaps',
+      'health-advisor-nutrition-calibration': '🍎 Nutrition Calibration',
+      'health-advisor-suggestions': '💭 Pending Suggestions',
+      'health-advisor-weekly-progress': '📊 Weekly Progress',
+      'health-advisor-tracking': '📈 Tracking Data',
+      'health-advisor-profiles': '👥 All Profiles',
+      'health-advisor-active-profile': '⭐ Active Profile',
+    };
+
+    let allData = {};
+
+    function loadData() {
+      const container = document.getElementById('dataContainer');
+      const summary = document.getElementById('summary');
+      container.innerHTML = '';
+      allData = {};
+
+      let totalKeys = 0;
+      let totalSize = 0;
+
+      // Check all known keys
+      KNOWN_KEYS.forEach(key => {
+        const value = localStorage.getItem(key);
+        if (value) {
+          totalKeys++;
+          totalSize += value.length;
+          allData[key] = tryParseJSON(value);
+          renderDataSection(container, key, value);
+        }
+      });
+
+      // Also check for any other health-advisor keys we might have missed
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('health-advisor') && !KNOWN_KEYS.includes(key)) {
+          const value = localStorage.getItem(key);
+          if (value) {
+            totalKeys++;
+            totalSize += value.length;
+            allData[key] = tryParseJSON(value);
+            renderDataSection(container, key, value);
+          }
+        }
+      }
+
+      // Update summary
+      summary.innerHTML = `
+        <div class="summary-card">
+          <div class="label">Data Keys Found</div>
+          <div class="value">${totalKeys}</div>
+        </div>
+        <div class="summary-card">
+          <div class="label">Total Data Size</div>
+          <div class="value">${formatBytes(totalSize)}</div>
+        </div>
+      `;
+
+      // Update raw view
+      document.getElementById('allDataPre').textContent = JSON.stringify(allData, null, 2);
+
+      if (totalKeys === 0) {
+        container.innerHTML = '<div class="data-section"><p class="empty">No Health Coach data found in localStorage. Make sure you\'re accessing this from the same origin as the app.</p></div>';
+      }
+    }
+
+    function tryParseJSON(str) {
+      try {
+        return JSON.parse(str);
+      } catch {
+        return str;
+      }
+    }
+
+    function renderDataSection(container, key, value) {
+      const section = document.createElement('div');
+      section.className = 'data-section';
+
+      const label = KEY_LABELS[key] || key;
+      const parsed = tryParseJSON(value);
+      const itemCount = getItemCount(parsed);
+
+      section.innerHTML = `
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
+          <div>
+            <h2>${label} ${itemCount ? `<span class="badge">${itemCount}</span>` : ''}</h2>
+            <div class="key">${key}</div>
+          </div>
+          <button class="copy-btn" onclick="copyKey('${key}')">Copy</button>
+        </div>
+        <pre>${JSON.stringify(parsed, null, 2)}</pre>
+      `;
+
+      container.appendChild(section);
+    }
+
+    function getItemCount(data) {
+      if (Array.isArray(data)) return `${data.length} items`;
+      if (data && typeof data === 'object') {
+        const keys = Object.keys(data);
+        if (keys.length <= 10) return `${keys.length} fields`;
+      }
+      return null;
+    }
+
+    function formatBytes(bytes) {
+      if (bytes < 1024) return bytes + ' B';
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+      return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    }
+
+    function showToast(message) {
+      const toast = document.getElementById('toast');
+      toast.textContent = message;
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 2000);
+    }
+
+    function copyKey(key) {
+      const value = localStorage.getItem(key);
+      navigator.clipboard.writeText(value).then(() => {
+        showToast(`Copied ${key}!`);
+      });
+    }
+
+    function copyAllData() {
+      const json = JSON.stringify(allData, null, 2);
+      navigator.clipboard.writeText(json).then(() => {
+        showToast('All data copied to clipboard!');
+      });
+    }
+
+    function downloadAllData() {
+      const json = JSON.stringify(allData, null, 2);
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `health-coach-backup-${new Date().toISOString().split('T')[0]}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast('Download started!');
+    }
+
+    function toggleRawView() {
+      const pre = document.getElementById('allDataPre');
+      pre.style.display = pre.style.display === 'none' ? 'block' : 'none';
+    }
+
+    // Load data on page load
+    loadData();
+  </script>
+</body>
+</html>
