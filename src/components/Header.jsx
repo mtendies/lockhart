@@ -166,7 +166,10 @@ export default function Header({
                 {onOpenDevTools && (
                   <div className="border-t border-gray-100 py-1">
                     <button
-                      onClick={() => handleMenuClick(onOpenDevTools)}
+                      onClick={() => {
+                        console.log('Header: Dev Tools button clicked');
+                        handleMenuClick(onOpenDevTools);
+                      }}
                       className="w-full px-4 py-2.5 flex items-center gap-3 text-sm text-gray-500 hover:bg-gray-50 transition-colors"
                     >
                       <Wrench size={16} className="text-gray-400" />

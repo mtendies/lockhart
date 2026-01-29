@@ -95,6 +95,19 @@ function AppContent() {
   const [showCheckInModal, setShowCheckInModal] = useState(false);
   const previousProfileRef = useRef(null);
 
+  // Global keyboard shortcut for Dev Tools (Ctrl+Shift+D)
+  useEffect(() => {
+    function handleKeyDown(e) {
+      if (e.ctrlKey && e.shiftKey && e.key === 'D') {
+        e.preventDefault();
+        console.log('App.jsx: Ctrl+Shift+D pressed, toggling DevTools');
+        setShowDevTools(prev => !prev);
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   useEffect(() => {
     // Initialize profile system first (handles migration of existing data)
     initializeProfiles();
@@ -409,7 +422,10 @@ function AppContent() {
           onNavigateToProfile={() => setView('profile')}
           onNavigateToLearnedInsights={() => setView('learned')}
           onOpenProfileSwitcher={() => setShowProfileSwitcher(true)}
-          onOpenDevTools={() => setShowDevTools(true)}
+          onOpenDevTools={() => {
+            console.log('App.jsx: onOpenDevTools called, setting showDevTools to true');
+            setShowDevTools(true);
+          }}
           onShowTutorial={handleShowTutorial}
         />
 
@@ -554,10 +570,13 @@ function AppContent() {
 
         {/* Dev Tools Modal */}
         {showDevTools && (
-          <DevTools
-            isModal={true}
-            onClose={() => setShowDevTools(false)}
-          />
+          <>
+            {console.log('App.jsx: Rendering DevTools modal, showDevTools=', showDevTools)}
+            <DevTools
+              isModal={true}
+              onClose={() => setShowDevTools(false)}
+            />
+          </>
         )}
 
         {/* Tutorial overlay */}
