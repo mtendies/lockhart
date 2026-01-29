@@ -31,6 +31,7 @@ import * as dataService from '../lib/dataService';
 import {
   getProfiles,
   getActiveProfile,
+  getActiveProfileId,
   loadTestProfile,
   switchProfile,
   exportProfileData,
@@ -422,130 +423,206 @@ export default function DevTools({ isModal = false, onClose }) {
       errors: 0,
     };
 
+    // Get the active profile ID for localStorage keys
+    const profileId = getActiveProfileId();
+
+    // Helper to get data - handles both prefixed and non-prefixed keys
+    const getData = (baseKey) => {
+      // First check if the parsed JSON has the key directly
+      let data = parsed[baseKey];
+
+      // Check with profile prefix
+      if (!data) {
+        data = parsed[`${profileId}:${baseKey}`];
+      }
+
+      // Check for profile_main prefix (common case)
+      if (!data) {
+        data = parsed[`profile_main:${baseKey}`];
+      }
+
+      // Try to find any key containing the base key
+      if (!data) {
+        const matchingKey = Object.keys(parsed).find(k => k.includes(baseKey));
+        if (matchingKey) {
+          data = parsed[matchingKey];
+        }
+      }
+
+      if (!data) return null;
+
+      // Parse if string
+      try {
+        return typeof data === 'string' ? JSON.parse(data) : data;
+      } catch {
+        return data;
+      }
+    };
+
+    // Helper to save to localStorage with profile prefix
+    const saveToLocalStorage = (baseKey, data) => {
+      const key = `${profileId}:${baseKey}`;
+      localStorage.setItem(key, typeof data === 'string' ? data : JSON.stringify(data));
+    };
+
     try {
       // Import Profile data
       setImportProgress({ status: 'importing', current: 'Profile', counts });
-      const profileData = parsed['health-advisor-profile'] || parsed['profile'];
+      const profileData = getData('health-advisor-profile');
       if (profileData) {
-        const profile = typeof profileData === 'string' ? JSON.parse(profileData) : profileData;
-        const { error } = await dataService.upsertProfile(user.id, profile);
+        // Save to Supabase
+        const { error } = await dataService.upsertProfile(user.id, profileData);
         if (error) {
           console.error('Profile import error:', error);
           counts.errors++;
         } else {
           counts.profile = 1;
+          // Also save to localStorage for immediate app use
+          saveToLocalStorage('health-advisor-profile', profileData);
         }
       }
 
       // Import Activities
       setImportProgress({ status: 'importing', current: 'Activities', counts });
-      const activitiesData = parsed['health-advisor-activities'] || parsed['activities'];
-      if (activitiesData) {
-        const activities = typeof activitiesData === 'string' ? JSON.parse(activitiesData) : activitiesData;
-        if (Array.isArray(activities)) {
-          for (const activity of activities) {
-            const { error } = await dataService.addActivity(user.id, activity);
-            if (error) {
-              console.error('Activity import error:', error);
-              counts.errors++;
-            } else {
-              counts.activities++;
-            }
+      const activitiesData = getData('health-advisor-activities');
+      if (activitiesData && Array.isArray(activitiesData)) {
+        // Save all activities to localStorage
+        saveToLocalStorage('health-advisor-activities', activitiesData);
+
+        // Also save to Supabase
+        for (const activity of activitiesData) {
+          const { error } = await dataService.addActivity(user.id, activity);
+          if (error) {
+            console.error('Activity import error:', error);
+            counts.errors++;
+          } else {
+            counts.activities++;
           }
         }
       }
 
       // Import Playbook
       setImportProgress({ status: 'importing', current: 'Playbook', counts });
-      const playbookData = parsed['health-advisor-playbook'] || parsed['playbook'];
+      const playbookData = getData('health-advisor-playbook');
       if (playbookData) {
-        const playbook = typeof playbookData === 'string' ? JSON.parse(playbookData) : playbookData;
-        const { error } = await dataService.upsertPlaybook(user.id, playbook);
+        // Save to Supabase
+        const { error } = await dataService.upsertPlaybook(user.id, playbookData);
         if (error) {
           console.error('Playbook import error:', error);
           counts.errors++;
         } else {
           counts.playbook = 1;
+          // Also save to localStorage
+          saveToLocalStorage('health-advisor-playbook', playbookData);
         }
       }
 
       // Import Chat Conversations
       setImportProgress({ status: 'importing', current: 'Conversations', counts });
-      const chatsData = parsed['health-advisor-chats'] || parsed['conversations'] || parsed['chat-conversations'];
-      if (chatsData) {
-        const chats = typeof chatsData === 'string' ? JSON.parse(chatsData) : chatsData;
-        if (Array.isArray(chats)) {
-          for (const chat of chats) {
-            const { error } = await dataService.upsertConversation(user.id, chat);
-            if (error) {
-              console.error('Conversation import error:', error);
-              counts.errors++;
-            } else {
-              counts.conversations++;
-            }
+      const chatsData = getData('health-advisor-chats');
+      if (chatsData && Array.isArray(chatsData)) {
+        // Save to localStorage
+        saveToLocalStorage('health-advisor-chats', chatsData);
+
+        // Also save to Supabase
+        for (const chat of chatsData) {
+          const { error } = await dataService.upsertConversation(user.id, chat);
+          if (error) {
+            console.error('Conversation import error:', error);
+            counts.errors++;
+          } else {
+            counts.conversations++;
           }
         }
       }
 
       // Import Learned Insights
       setImportProgress({ status: 'importing', current: 'Learned Insights', counts });
-      const insightsData = parsed['health-advisor-learned'] || parsed['learned-insights'] || parsed['insights'];
-      if (insightsData) {
-        const insights = typeof insightsData === 'string' ? JSON.parse(insightsData) : insightsData;
-        if (Array.isArray(insights)) {
-          for (const insight of insights) {
-            const { error } = await dataService.addLearnedInsight(user.id, { text: insight.text || insight.insight, category: insight.category, confidence: insight.confidence });
-            if (error) {
-              console.error('Insight import error:', error);
-              counts.errors++;
-            } else {
-              counts.insights++;
-            }
+      const insightsData = getData('health-advisor-learned-insights');
+      if (insightsData && Array.isArray(insightsData)) {
+        // Save to localStorage
+        saveToLocalStorage('health-advisor-learned-insights', insightsData);
+
+        // Also save to Supabase
+        for (const insight of insightsData) {
+          const { error } = await dataService.addLearnedInsight(user.id, {
+            text: insight.text || insight.insight,
+            category: insight.category,
+            confidence: insight.confidence
+          });
+          if (error) {
+            console.error('Insight import error:', error);
+            counts.errors++;
+          } else {
+            counts.insights++;
           }
         }
       }
 
       // Import Weekly Check-ins
       setImportProgress({ status: 'importing', current: 'Check-ins', counts });
-      const checkinsData = parsed['health-advisor-checkins'] || parsed['weekly-checkins'] || parsed['checkins'];
-      if (checkinsData) {
-        const checkins = typeof checkinsData === 'string' ? JSON.parse(checkinsData) : checkinsData;
-        if (Array.isArray(checkins)) {
-          for (const checkin of checkins) {
-            const { error } = await dataService.upsertCheckin(user.id, checkin);
-            if (error) {
-              console.error('Checkin import error:', error);
-              counts.errors++;
-            } else {
-              counts.checkins++;
-            }
+      const checkinsData = getData('health-advisor-checkins');
+      if (checkinsData && Array.isArray(checkinsData)) {
+        // Save to localStorage
+        saveToLocalStorage('health-advisor-checkins', checkinsData);
+
+        // Also save to Supabase
+        for (const checkin of checkinsData) {
+          const { error } = await dataService.upsertCheckin(user.id, checkin);
+          if (error) {
+            console.error('Checkin import error:', error);
+            counts.errors++;
+          } else {
+            counts.checkins++;
           }
         }
       }
 
       // Import Nutrition Calibration
-      const nutritionData = parsed['health-advisor-nutrition'] || parsed['nutrition-calibration'];
+      const nutritionData = getData('health-advisor-nutrition-calibration');
       if (nutritionData) {
-        const nutrition = typeof nutritionData === 'string' ? JSON.parse(nutritionData) : nutritionData;
-        if (nutrition.days) {
-          for (const [dayName, dayData] of Object.entries(nutrition.days)) {
-            // Convert day name to date (approximate based on startDate if available)
-            const startDate = nutrition.startDate || new Date().toISOString().split('T')[0];
+        // Save to localStorage
+        saveToLocalStorage('health-advisor-nutrition-calibration', nutritionData);
+
+        // Also save to Supabase
+        if (nutritionData.days) {
+          for (const [dayName, dayData] of Object.entries(nutritionData.days)) {
+            const startDate = nutritionData.startDate || new Date().toISOString().split('T')[0];
             await dataService.upsertNutritionDay(user.id, startDate, dayData, dayData.completed);
           }
         }
       }
+
+      // Import other localStorage-only data (no Supabase equivalent)
+      const groceryData = getData('health-advisor-grocery');
+      if (groceryData) saveToLocalStorage('health-advisor-grocery', groceryData);
+
+      const groceriesData = getData('health-advisor-groceries');
+      if (groceriesData) saveToLocalStorage('health-advisor-groceries', groceriesData);
+
+      const notesData = getData('health-advisor-notes');
+      if (notesData) saveToLocalStorage('health-advisor-notes', notesData);
+
+      const bookmarksData = getData('health-advisor-bookmarks');
+      if (bookmarksData) saveToLocalStorage('health-advisor-bookmarks', bookmarksData);
+
+      const suggestionsData = getData('health-advisor-playbook-suggestions');
+      if (suggestionsData) saveToLocalStorage('health-advisor-playbook-suggestions', suggestionsData);
+
+      const workoutsData = getData('health-advisor-workouts');
+      if (workoutsData) saveToLocalStorage('health-advisor-workouts', workoutsData);
+
+      const draftData = getData('health-advisor-draft');
+      if (draftData) saveToLocalStorage('health-advisor-draft', draftData);
 
       setImportProgress({ status: 'complete', current: '', counts });
 
       const successMsg = `Imported: ${counts.profile} profile, ${counts.activities} activities, ${counts.playbook} playbook, ${counts.conversations} conversations, ${counts.insights} insights, ${counts.checkins} check-ins${counts.errors > 0 ? ` (${counts.errors} errors)` : ''}`;
       showNotification(successMsg, counts.errors > 0 ? 'info' : 'success');
 
-      // Close modal after short delay
+      // Reload the page after a short delay to pick up the new data
       setTimeout(() => {
-        setShowLegacyImport(false);
-        setLegacyImportJson('');
-        setImportProgress(null);
+        window.location.reload();
       }, 2000);
 
     } catch (err) {
