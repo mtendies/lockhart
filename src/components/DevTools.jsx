@@ -443,17 +443,34 @@ export default function DevTools({ isModal = false, onClose }) {
 
     // Helper to get data - handles both prefixed and non-prefixed keys
     const getData = (baseKey) => {
+      console.log(`Looking for key: ${baseKey}`);
+      console.log('Available keys in JSON:', Object.keys(parsed));
+
       // First check if the parsed JSON has the key directly
       let data = parsed[baseKey];
+      if (data) console.log(`Found direct key: ${baseKey}`);
 
-      // Check with profile prefix
+      // Check with current profile prefix
       if (!data) {
-        data = parsed[`${profileId}:${baseKey}`];
+        const key = `${profileId}:${baseKey}`;
+        data = parsed[key];
+        if (data) console.log(`Found with current profile prefix: ${key}`);
       }
 
       // Check for profile_main prefix (common case)
       if (!data) {
-        data = parsed[`profile_main:${baseKey}`];
+        const key = `profile_main:${baseKey}`;
+        data = parsed[key];
+        if (data) console.log(`Found with profile_main prefix: ${key}`);
+      }
+
+      // Try to find any key ending with the base key
+      if (!data) {
+        const matchingKey = Object.keys(parsed).find(k => k.endsWith(baseKey));
+        if (matchingKey) {
+          data = parsed[matchingKey];
+          console.log(`Found key ending with baseKey: ${matchingKey}`);
+        }
       }
 
       // Try to find any key containing the base key
@@ -461,15 +478,22 @@ export default function DevTools({ isModal = false, onClose }) {
         const matchingKey = Object.keys(parsed).find(k => k.includes(baseKey));
         if (matchingKey) {
           data = parsed[matchingKey];
+          console.log(`Found key containing baseKey: ${matchingKey}`);
         }
       }
 
-      if (!data) return null;
+      if (!data) {
+        console.log(`No data found for: ${baseKey}`);
+        return null;
+      }
 
       // Parse if string
       try {
-        return typeof data === 'string' ? JSON.parse(data) : data;
-      } catch {
+        const result = typeof data === 'string' ? JSON.parse(data) : data;
+        console.log(`Parsed data for ${baseKey}:`, typeof result, Array.isArray(result) ? `array[${result.length}]` : '');
+        return result;
+      } catch (e) {
+        console.log(`Parse error for ${baseKey}, returning raw:`, e.message);
         return data;
       }
     };
