@@ -596,7 +596,13 @@ function AuthenticatedApp() {
 
   // Show auth screen if not logged in
   if (!user) {
-    return <Auth />;
+    return (
+      <>
+        <Auth />
+        {/* DevTools available on auth screen for importing legacy data */}
+        <DevTools />
+      </>
+    );
   }
 
   // Show main app content if authenticated

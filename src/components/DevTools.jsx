@@ -58,7 +58,7 @@ import TEST_PROFILES from '../testProfiles';
 // Show in development, or in production with ?devtools=true URL param
 const isDev = import.meta.env.DEV;
 const hasDevToolsParam = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('devtools') === 'true';
-const showDevTools = isDev || hasDevToolsParam;
+const canShowDevTools = isDev || hasDevToolsParam;
 
 export default function DevTools({ isModal = false, onClose }) {
   const { user } = useAuth();
@@ -99,7 +99,9 @@ export default function DevTools({ isModal = false, onClose }) {
     onClose?.();
   }
 
-  if (!showDevTools) return null;
+  // If opened as modal (from header menu), always show
+  // If not modal (floating button), only show in dev or with ?devtools=true
+  if (!isModal && !canShowDevTools) return null;
 
   function showNotification(message, type = 'success') {
     setNotification({ message, type });
