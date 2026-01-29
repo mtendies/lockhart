@@ -14,16 +14,29 @@ export const getProfile = async (userId) => {
 };
 
 export const upsertProfile = async (userId, profile) => {
+  // Convert onboardingDepth string to integer
+  const onboardingLevelMap = { 'chill': 1, 'moderate': 2, 'hardcore': 3 };
+  const onboardingLevel = typeof profile.onboardingDepth === 'string'
+    ? onboardingLevelMap[profile.onboardingDepth] || null
+    : profile.onboardingDepth;
+
+  // Parse numeric fields that might be strings
+  const parseNum = (val) => {
+    if (val === null || val === undefined || val === '') return null;
+    const num = Number(val);
+    return isNaN(num) ? null : num;
+  };
+
   // Transform profile to match database schema
   const dbProfile = {
     id: userId,
     email: profile.email,
     name: profile.name,
-    age: profile.age,
+    age: parseNum(profile.age),
     sex: profile.sex,
-    height_feet: profile.heightFeet || (profile.height ? Math.floor(profile.height / 12) : null),
-    height_inches: profile.heightInches || (profile.height ? profile.height % 12 : null),
-    weight: profile.weight,
+    height_feet: profile.heightFeet || (profile.height ? Math.floor(parseNum(profile.height) / 12) : null),
+    height_inches: profile.heightInches || (profile.height ? parseNum(profile.height) % 12 : null),
+    weight: parseNum(profile.weight),
     address_street: profile.addressStreet,
     address_city: profile.addressCity,
     address_state: profile.addressState,
@@ -32,7 +45,7 @@ export const upsertProfile = async (userId, profile) => {
     exercise_types: profile.exercises || profile.exerciseTypes,
     dietary_preferences: profile.restrictions || profile.dietaryPreferences,
     meal_cadence: profile.mealPattern || profile.mealCadence,
-    onboarding_level: profile.onboardingDepth,
+    onboarding_level: onboardingLevel,
     onboarding_complete: profile.onboardingComplete ?? true,
     // Store full profile as JSONB for fields not in schema
     full_profile: profile,
