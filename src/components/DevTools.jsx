@@ -44,6 +44,7 @@ import {
   renameProfile,
 } from '../profileStore';
 import { clearLearnedInsights, getInsightCount } from '../learnedInsightsStore';
+import { clearBackup, createBackup } from '../dataBackup';
 import { clearCurrentWeekCheckIn, getCurrentWeekCheckIn, clearDraft, getDraft } from '../checkInStore';
 import {
   getActivities,
@@ -431,12 +432,14 @@ export default function DevTools({ isModal = false, onClose }) {
     // Get the active profile ID for localStorage keys
     const profileId = getActiveProfileId();
 
-    // FIRST: Clear all existing data for this profile to ensure clean import
-    console.log('Clearing existing data for profile:', profileId);
+    // FIRST: Clear all existing data AND backup for this profile to ensure clean import
+    console.log('Clearing existing data and backup for profile:', profileId);
     for (const key of PROFILE_STORAGE_KEYS) {
       const profileKey = `${profileId}:${key}`;
       localStorage.removeItem(profileKey);
     }
+    // Clear the backup so it doesn't restore old data on next page load
+    clearBackup();
 
     // Helper to get data - handles both prefixed and non-prefixed keys
     const getData = (baseKey) => {
@@ -631,6 +634,10 @@ export default function DevTools({ isModal = false, onClose }) {
 
       const draftData = getData('health-advisor-draft');
       if (draftData) saveToLocalStorage('health-advisor-draft', draftData);
+
+      // Create a new backup with the imported data so recovery works correctly
+      createBackup();
+      console.log('Created new backup with imported data');
 
       setImportProgress({ status: 'complete', current: '', counts });
 

@@ -69,6 +69,20 @@ export function getBackup() {
   }
 }
 
+// Clear the backup for the current profile (use after importing new data)
+export function clearBackup() {
+  try {
+    const profileId = getActiveProfileId();
+    const backupKey = `${profileId}:${BACKUP_KEY}`;
+    localStorage.removeItem(backupKey);
+    console.log('Backup cleared for profile:', profileId);
+    return true;
+  } catch (e) {
+    console.error('Failed to clear backup:', e);
+    return false;
+  }
+}
+
 // Restore all data from backup
 export function restoreFromBackup() {
   const backup = getBackup();
