@@ -40,6 +40,8 @@ import {
   deleteAllTestProfiles,
   getMainProfile,
   isTestProfile,
+  PROFILE_STORAGE_KEYS,
+  renameProfile,
 } from '../profileStore';
 import { clearLearnedInsights, getInsightCount } from '../learnedInsightsStore';
 import { clearCurrentWeekCheckIn, getCurrentWeekCheckIn, clearDraft, getDraft } from '../checkInStore';
@@ -64,6 +66,9 @@ const canShowDevTools = isDev || hasDevToolsParam;
 export default function DevTools({ isModal = false, onClose }) {
   const { user } = useAuth();
   const [isOpen, setIsOpen] = useState(isModal); // If modal, start open
+
+  // Debug logging
+  console.log('DevTools render:', { isModal, isOpen, canShowDevTools, isDev, hasDevToolsParam });
   const [activeTab, setActiveTab] = useState('profiles');
   const [loading, setLoading] = useState(null);
   const [notification, setNotification] = useState(null);
@@ -426,6 +431,13 @@ export default function DevTools({ isModal = false, onClose }) {
     // Get the active profile ID for localStorage keys
     const profileId = getActiveProfileId();
 
+    // FIRST: Clear all existing data for this profile to ensure clean import
+    console.log('Clearing existing data for profile:', profileId);
+    for (const key of PROFILE_STORAGE_KEYS) {
+      const profileKey = `${profileId}:${key}`;
+      localStorage.removeItem(profileKey);
+    }
+
     // Helper to get data - handles both prefixed and non-prefixed keys
     const getData = (baseKey) => {
       // First check if the parsed JSON has the key directly
@@ -479,6 +491,11 @@ export default function DevTools({ isModal = false, onClose }) {
           counts.profile = 1;
           // Also save to localStorage for immediate app use
           saveToLocalStorage('health-advisor-profile', profileData);
+
+          // Update the profile metadata name to match the imported profile name
+          if (profileData.name) {
+            renameProfile(profileId, profileData.name);
+          }
         }
       }
 
