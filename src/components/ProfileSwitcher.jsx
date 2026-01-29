@@ -61,10 +61,9 @@ export default function ProfileSwitcher({ onProfileChange }) {
   function handleDeleteProfile(profileId) {
     const profile = profiles.find(p => p.id === profileId);
     if (profile?.isMain) {
-      // Extra confirmation for main profile
-      if (!window.confirm('This is your MAIN profile. Are you absolutely sure you want to delete it? This cannot be undone.')) {
-        return;
-      }
+      // Master profile cannot be deleted
+      alert('The Master profile cannot be deleted. To delete this profile, first set another profile as Master.');
+      return;
     }
 
     if (deleteProfile(profileId)) {
@@ -457,16 +456,16 @@ function ManageProfilesModal({
                       >
                         <Edit3 size={14} />
                       </button>
-                      {!profile.isMain && (
+                      {!profile.isMain && !profile.isTest && (
                         <button
                           onClick={() => onSetMain(profile.id)}
                           className="p-1.5 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded"
-                          title="Set as Main"
+                          title="Set as Master"
                         >
                           <Shield size={14} />
                         </button>
                       )}
-                      {profiles.length > 1 && (
+                      {profiles.length > 1 && !profile.isMain && (
                         <button
                           onClick={() => onConfirmDelete(profile.id)}
                           className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"
@@ -484,7 +483,7 @@ function ManageProfilesModal({
                   <div className="mt-3 p-3 bg-red-50 rounded-lg border border-red-200">
                     <p className="text-sm text-red-800 mb-2">
                       {profile.isMain
-                        ? 'Delete your MAIN profile? This cannot be undone!'
+                        ? 'The Master profile cannot be deleted.'
                         : `Delete "${profile.name}"? This cannot be undone.`}
                     </p>
                     <div className="flex gap-2">

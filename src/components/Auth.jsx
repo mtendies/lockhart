@@ -51,7 +51,7 @@ export default function Auth() {
             <span className="text-3xl font-bold text-white">L</span>
           </div>
           <h1 className="text-3xl font-bold text-gray-900">Lockhart</h1>
-          <p className="mt-2 text-gray-600">Your Personal Health Advisor</p>
+          <p className="mt-2 text-gray-600">Your Personal Health & Fitness Advisor</p>
         </div>
 
         {/* Auth Card */}

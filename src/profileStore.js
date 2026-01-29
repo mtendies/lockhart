@@ -58,7 +58,7 @@ export function getProfiles() {
   // Initialize with default main profile if none exist
   const defaultProfile = {
     id: 'profile_main',
-    name: 'Main Profile',
+    name: 'Master Profile',
     isMain: true,
     createdAt: new Date().toISOString(),
     lastAccessedAt: new Date().toISOString(),
@@ -225,6 +225,12 @@ export function deleteProfile(profileId) {
     return false;
   }
 
+  // Prevent deleting the Master profile
+  if (profile.isMain) {
+    console.error('Cannot delete the Master profile');
+    return false;
+  }
+
   // Prevent deleting the last profile
   if (profiles.length <= 1) {
     console.error('Cannot delete the last profile');
@@ -307,7 +313,7 @@ export function initializeProfiles() {
     // Create default main profile
     const defaultProfile = {
       id: 'profile_main',
-      name: 'Main Profile',
+      name: 'Master Profile',
       isMain: true,
       createdAt: new Date().toISOString(),
       lastAccessedAt: new Date().toISOString(),

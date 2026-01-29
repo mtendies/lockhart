@@ -25,7 +25,7 @@ const TUTORIAL_SCREENS = [
     icon: PartyPopper,
     iconColor: 'text-amber-500',
     iconBg: 'bg-amber-50',
-    title: 'Welcome to Your Health Advisor!',
+    title: 'Welcome to Lockhart!',
     content: "Let's take 60 seconds to show you how to get the most out of this.",
     cta: "Let's Go",
   },
@@ -64,7 +64,7 @@ const TUTORIAL_SCREENS = [
       '"Should I eat more protein?"',
       '"What\'s a good post-run meal?"',
     ],
-    tagline: 'Your personal health coach, 24/7.',
+    tagline: 'Your personal health advisor, 24/7.',
   },
   {
     id: 'nutrition',

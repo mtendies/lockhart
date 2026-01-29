@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Health Coach - Export LocalStorage Data</title>
+  <title>Lockhart - Export LocalStorage Data</title>
   <style>
     * { box-sizing: border-box; }
     body {
@@ -137,7 +137,7 @@
 </head>
 <body>
   <h1>📦 Export LocalStorage Data</h1>
-  <p class="subtitle">View and export all your Health Coach data stored in this browser</p>
+  <p class="subtitle">View and export all your Lockhart data stored in this browser</p>
 
   <div class="instructions">
     <h3>⚠️ Important</h3>
@@ -160,7 +160,7 @@
   <div class="toast" id="toast"></div>
 
   <script>
-    // Health Coach localStorage keys
+    // Lockhart localStorage keys
     const KNOWN_KEYS = [
       'health-advisor-profile',
       'health-advisor-playbook',
@@ -252,7 +252,7 @@
       document.getElementById('allDataPre').textContent = JSON.stringify(allData, null, 2);
 
       if (totalKeys === 0) {
-        container.innerHTML = '<div class="data-section"><p class="empty">No Health Coach data found in localStorage. Make sure you\'re accessing this from the same origin as the app.</p></div>';
+        container.innerHTML = '<div class="data-section"><p class="empty">No Lockhart data found in localStorage. Make sure you\'re accessing this from the same origin as the app.</p></div>';
       }
     }
 

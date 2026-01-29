@@ -60,12 +60,12 @@ export default function MessageActions({
       .replace(/`/g, '')
       .trim();
 
-    const shareText = `From my Health Advisor:\n\n${cleanContent}`;
+    const shareText = `From Lockhart:\n\n${cleanContent}`;
 
     if (method === 'native' && navigator.share) {
       try {
         await navigator.share({
-          title: 'Health Advice',
+          title: 'Lockhart Advice',
           text: shareText,
         });
       } catch (err) {
@@ -82,7 +82,7 @@ export default function MessageActions({
         console.error('Failed to copy:', err);
       }
     } else if (method === 'email') {
-      const subject = encodeURIComponent('Health Advice');
+      const subject = encodeURIComponent('Lockhart Advice');
       const body = encodeURIComponent(shareText);
       window.open(`mailto:?subject=${subject}&body=${body}`);
     } else if (method === 'sms') {

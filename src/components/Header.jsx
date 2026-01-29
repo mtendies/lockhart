@@ -66,9 +66,9 @@ export default function Header({
           {/* Left: App Logo/Name */}
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 bg-gradient-to-br from-primary-500 to-primary-600 rounded-lg flex items-center justify-center">
-              <span className="text-white text-sm font-bold">H</span>
+              <span className="text-white text-sm font-bold">L</span>
             </div>
-            <span className="font-semibold text-gray-900 hidden sm:block">Health Coach</span>
+            <span className="font-semibold text-gray-900 hidden sm:block">Lockhart</span>
           </div>
 
           {/* Right: Profile Dropdown */}
@@ -117,7 +117,7 @@ export default function Header({
                         )}
                       </p>
                       <p className="text-xs text-gray-500">
-                        {activeProfile?.isTest ? 'Test Profile' : activeProfile?.isMain ? 'Main Profile' : 'Profile'}
+                        {activeProfile?.isTest ? 'Test Profile' : activeProfile?.isMain ? 'Master Profile' : 'Profile'}
                       </p>
                     </div>
                   </div>
