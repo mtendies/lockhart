@@ -24,6 +24,12 @@ import {
   TrendingUp,
   TrendingDown,
   Minus,
+  Cloud,
+  Download,
+  Upload,
+  Check,
+  Copy,
+  AlertCircle,
 } from 'lucide-react';
 import LearnedInsights from './LearnedInsights';
 import { getRecentCheckIns, formatWeekOf } from '../checkInStore';
@@ -236,6 +242,9 @@ export default function ProfileView({
         {/* Past Weekly Check-ins Section */}
         <PastCheckIns />
 
+        {/* Sync Data Section */}
+        <SyncDataCard />
+
         {/* Bottom spacing */}
         <div className="h-8" />
       </div>
@@ -382,6 +391,177 @@ function PastCheckIns() {
           + {checkIns.length - 4} more check-in{checkIns.length - 4 !== 1 ? 's' : ''}
         </p>
       )}
+    </div>
+  );
+}
+
+// Sync Data component for transferring data between devices/environments
+function SyncDataCard() {
+  const [status, setStatus] = useState(null); // 'copied' | 'imported' | 'error'
+  const [showImport, setShowImport] = useState(false);
+  const [importData, setImportData] = useState('');
+  const [importError, setImportError] = useState(null);
+
+  // Get all localStorage keys that start with profile prefix or are health-advisor keys
+  function getAllAppData() {
+    const data = {};
+    const profileId = localStorage.getItem('health-advisor-active-profile');
+
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      // Include health-advisor keys and profile-prefixed keys
+      if (key && (key.includes('health-advisor') || (profileId && key.startsWith(profileId)))) {
+        data[key] = localStorage.getItem(key);
+      }
+    }
+    return data;
+  }
+
+  function handleExport() {
+    try {
+      const data = getAllAppData();
+      const json = JSON.stringify(data, null, 2);
+      navigator.clipboard.writeText(json);
+      setStatus('copied');
+      setTimeout(() => setStatus(null), 3000);
+    } catch (err) {
+      console.error('Export error:', err);
+      setStatus('error');
+      setTimeout(() => setStatus(null), 3000);
+    }
+  }
+
+  function handleImport() {
+    setImportError(null);
+
+    if (!importData.trim()) {
+      setImportError('Please paste your exported data');
+      return;
+    }
+
+    try {
+      const data = JSON.parse(importData);
+
+      // Validate it looks like our data
+      const keys = Object.keys(data);
+      const hasValidKeys = keys.some(k => k.includes('health-advisor'));
+
+      if (!hasValidKeys) {
+        setImportError('Invalid data format. Make sure you copied the full export.');
+        return;
+      }
+
+      // Import all keys
+      for (const [key, value] of Object.entries(data)) {
+        localStorage.setItem(key, value);
+      }
+
+      setStatus('imported');
+      setShowImport(false);
+      setImportData('');
+
+      // Reload after short delay
+      setTimeout(() => {
+        window.location.reload();
+      }, 1500);
+
+    } catch (err) {
+      console.error('Import error:', err);
+      setImportError('Invalid JSON. Make sure you copied the complete data.');
+    }
+  }
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 p-5 mb-4">
+      <div className="flex items-center gap-2 mb-4">
+        <Cloud size={18} className="text-blue-600" />
+        <h2 className="font-semibold text-gray-900">Sync Data</h2>
+      </div>
+
+      <p className="text-sm text-gray-500 mb-4">
+        Transfer your data between devices or from localhost to the live site.
+      </p>
+
+      {/* Status Messages */}
+      {status === 'copied' && (
+        <div className="mb-4 p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center gap-2">
+          <Check size={16} className="text-emerald-600" />
+          <span className="text-sm text-emerald-700">Data copied to clipboard! Paste it on the other device.</span>
+        </div>
+      )}
+
+      {status === 'imported' && (
+        <div className="mb-4 p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center gap-2">
+          <Check size={16} className="text-emerald-600" />
+          <span className="text-sm text-emerald-700">Data imported! Reloading...</span>
+        </div>
+      )}
+
+      {status === 'error' && (
+        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl flex items-center gap-2">
+          <AlertCircle size={16} className="text-red-600" />
+          <span className="text-sm text-red-700">Something went wrong. Please try again.</span>
+        </div>
+      )}
+
+      {/* Export/Import Buttons */}
+      {!showImport ? (
+        <div className="flex gap-3">
+          <button
+            onClick={handleExport}
+            className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-blue-50 text-blue-700 font-medium rounded-xl hover:bg-blue-100 transition-colors"
+          >
+            <Copy size={18} />
+            Copy All Data
+          </button>
+          <button
+            onClick={() => setShowImport(true)}
+            className="flex-1 flex items-center justify-center gap-2 px-4 py-3 bg-gray-50 text-gray-700 font-medium rounded-xl hover:bg-gray-100 transition-colors"
+          >
+            <Upload size={18} />
+            Import Data
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <textarea
+            value={importData}
+            onChange={(e) => setImportData(e.target.value)}
+            placeholder="Paste your exported data here..."
+            className="w-full h-32 p-3 text-xs font-mono bg-gray-50 border border-gray-200 rounded-xl resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          />
+
+          {importError && (
+            <p className="text-sm text-red-600 flex items-center gap-1">
+              <AlertCircle size={14} />
+              {importError}
+            </p>
+          )}
+
+          <div className="flex gap-2">
+            <button
+              onClick={() => {
+                setShowImport(false);
+                setImportData('');
+                setImportError(null);
+              }}
+              className="flex-1 px-4 py-2 text-gray-600 font-medium rounded-xl hover:bg-gray-100 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleImport}
+              className="flex-1 px-4 py-2 bg-blue-600 text-white font-medium rounded-xl hover:bg-blue-700 transition-colors"
+            >
+              Import & Reload
+            </button>
+          </div>
+        </div>
+      )}
+
+      <p className="mt-4 text-xs text-gray-400">
+        <strong>How to sync:</strong> On source device, click "Copy All Data". On destination device, click "Import Data" and paste.
+      </p>
     </div>
   );
 }
