@@ -4,6 +4,7 @@
  */
 
 import { getItem, setItem } from './storageHelper';
+import { syncConversation, deleteConversationFromSupabase } from './lib/syncHelper';
 
 const STORAGE_KEY = 'health-advisor-chats';
 
@@ -293,6 +294,9 @@ export function createChat(initialMessage = null) {
   chats.unshift(newChat);
   saveChats(chats);
 
+  // Sync to Supabase in background
+  syncConversation(newChat);
+
   return newChat;
 }
 
@@ -335,6 +339,10 @@ export function updateChatMessages(chatId, messages) {
   };
 
   saveChats(chats);
+
+  // Sync to Supabase in background
+  syncConversation(chats[index]);
+
   return chats[index];
 }
 
@@ -417,6 +425,9 @@ export function archiveMessage(chatId, messageIndex) {
 export function deleteChat(chatId) {
   const chats = getAllChats().filter(c => c.id !== chatId);
   saveChats(chats);
+
+  // Delete from Supabase in background
+  deleteConversationFromSupabase(chatId);
 }
 
 /**

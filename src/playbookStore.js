@@ -1,4 +1,5 @@
 import { getItem, setItem, removeItem } from './storageHelper';
+import { syncPlaybook } from './lib/syncHelper';
 
 const STORAGE_KEY = 'health-advisor-playbook';
 
@@ -12,10 +13,15 @@ export function getPlaybook() {
 }
 
 export function savePlaybook(playbook) {
-  setItem(STORAGE_KEY, JSON.stringify({
+  const playbookWithTimestamp = {
     ...playbook,
     generatedAt: new Date().toISOString(),
-  }));
+  };
+
+  setItem(STORAGE_KEY, JSON.stringify(playbookWithTimestamp));
+
+  // Sync to Supabase in background
+  syncPlaybook(playbookWithTimestamp);
 }
 
 export function clearPlaybook() {

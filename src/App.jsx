@@ -5,6 +5,7 @@ import PreOnboardingIntro from './components/PreOnboardingIntro';
 import FeedbackButton from './components/FeedbackButton';
 import AdminFeedback from './components/AdminFeedback';
 import * as dataService from './lib/dataService';
+import { useSupabaseSync } from './hooks/useSupabaseSync';
 
 // Error boundary to catch and display React errors
 class ErrorBoundary extends Component {
@@ -75,6 +76,7 @@ import { getLearnedInsights } from './learnedInsightsStore';
 
 function AppContent() {
   const { user, loading: authLoading, signOut } = useAuth();
+  const { syncStatus, loadFromSupabase, pushToSupabase, syncToSupabase } = useSupabaseSync();
   const [profile, setProfile] = useState(null);
   const [notes, setNotes] = useState({});
   const [loading, setLoading] = useState(true);

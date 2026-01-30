@@ -11,6 +11,7 @@
 import { getItem, setItem, removeItem } from './storageHelper';
 import { getProfile } from './store';
 import { logActivity, ACTIVITY_TYPES } from './activityLogStore';
+import { syncNutritionDay } from './lib/syncHelper';
 
 const STORAGE_KEY = 'health-advisor-nutrition-calibration';
 const PROFILE_KEY = 'health-advisor-nutrition-profile';
@@ -597,6 +598,10 @@ export function completeDay(day) {
     }
 
     saveCalibrationData(data);
+
+    // Sync to Supabase in background
+    const todayDate = new Date().toISOString().split('T')[0];
+    syncNutritionDay(todayDate, data.days[day], true);
   }
   return data;
 }

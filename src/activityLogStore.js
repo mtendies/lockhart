@@ -5,6 +5,7 @@
  */
 
 import { getItem, setItem, removeItem } from './storageHelper';
+import { syncActivity, deleteActivityFromSupabase } from './lib/syncHelper';
 
 const STORAGE_KEY = 'health-advisor-activities';
 
@@ -78,6 +79,9 @@ export function logActivity(activity) {
 
   activities.unshift(newActivity); // Most recent first
   saveActivities(activities);
+
+  // Sync to Supabase in background
+  syncActivity(newActivity);
 
   return newActivity;
 }
@@ -170,6 +174,10 @@ export function getWeeklySummary() {
 export function deleteActivity(id) {
   const activities = getActivities().filter(a => a.id !== id);
   saveActivities(activities);
+
+  // Delete from Supabase in background
+  deleteActivityFromSupabase(id);
+
   return activities;
 }
 

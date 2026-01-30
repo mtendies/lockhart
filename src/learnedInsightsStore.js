@@ -5,6 +5,7 @@
  */
 
 import { getItem, setItem } from './storageHelper';
+import { syncInsight, deleteInsightFromSupabase } from './lib/syncHelper';
 
 const STORAGE_KEY = 'health-advisor-learned-insights';
 
@@ -88,6 +89,9 @@ export function addLearnedInsight(insight) {
   insights.unshift(newInsight);
   saveInsights(insights);
 
+  // Sync to Supabase in background
+  syncInsight(newInsight);
+
   return newInsight;
 }
 
@@ -125,6 +129,10 @@ export function deleteLearnedInsight(id) {
   if (filtered.length === insights.length) return false;
 
   saveInsights(filtered);
+
+  // Delete from Supabase in background
+  deleteInsightFromSupabase(id);
+
   return true;
 }
 

@@ -1,4 +1,5 @@
 import { getItem, setItem, removeItem } from './storageHelper';
+import { syncCheckin } from './lib/syncHelper';
 
 const STORAGE_KEY = 'health-advisor-checkins';
 const REMINDER_KEY = 'health-advisor-checkin-reminder';
@@ -91,6 +92,10 @@ export function addCheckIn(checkIn) {
   };
   checkIns.push(entry);
   setItem(STORAGE_KEY, JSON.stringify(checkIns));
+
+  // Sync to Supabase in background
+  syncCheckin(entry);
+
   return checkIns;
 }
 
