@@ -254,6 +254,61 @@ export function useSupabaseSync() {
     }
   }, [user?.id]);
 
+  // Force load from Supabase (for data recovery)
+  // This will OVERWRITE local data with Supabase data
+  const forceLoadFromSupabase = useCallback(async () => {
+    if (!user?.id) return null;
+
+    console.log('[Sync] FORCE loading from Supabase (will overwrite local data)...');
+    setSyncStatus('syncing');
+    setSyncErrors([]);
+
+    try {
+      const results = await dataService.loadAllData(user.id);
+
+      // Force update - overwrite local data
+      if (results.profile) {
+        setItem(SYNC_KEYS.profile, JSON.stringify(results.profile));
+      }
+      if (results.activities?.length > 0) {
+        const activities = results.activities.map(a => ({
+          ...a,
+          date: a.timestamp?.split('T')[0],
+          weekOf: getWeekOf(a.timestamp),
+        }));
+        setItem(SYNC_KEYS.activities, JSON.stringify(activities));
+      }
+      if (results.playbook) {
+        setItem(SYNC_KEYS.playbook, JSON.stringify(results.playbook));
+      }
+      if (results.conversations?.length > 0) {
+        setItem(SYNC_KEYS.chats, JSON.stringify(results.conversations));
+      }
+      if (results.insights?.length > 0) {
+        setItem(SYNC_KEYS.insights, JSON.stringify(results.insights));
+      }
+      if (results.checkins?.length > 0) {
+        setItem(SYNC_KEYS.checkins, JSON.stringify(results.checkins));
+      }
+      if (results.nutritionCalibration) {
+        setItem(SYNC_KEYS.nutrition, JSON.stringify(results.nutritionCalibration));
+      }
+      if (results.notes && Object.keys(results.notes).length > 0) {
+        setItem(SYNC_KEYS.notes, JSON.stringify(results.notes));
+      }
+
+      setSyncStatus('synced');
+      setLastSynced(new Date());
+      console.log('[Sync] Force load complete. Refresh the page to see restored data.');
+      return results;
+    } catch (err) {
+      console.error('Force sync error:', err);
+      setSyncErrors([{ type: 'general', error: err }]);
+      setSyncStatus('error');
+      return null;
+    }
+  }, [user?.id]);
+
   // Auto-load from Supabase when authenticated
   // CONSERVATIVE: Only loads if localStorage is completely empty
   useEffect(() => {
@@ -286,6 +341,7 @@ export function useSupabaseSync() {
     loadFromSupabase,
     pushToSupabase,
     syncToSupabase,
+    forceLoadFromSupabase, // For data recovery - overwrites local data
     isAuthenticated,
     userId: user?.id,
   };

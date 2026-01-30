@@ -76,7 +76,23 @@ import { getLearnedInsights } from './learnedInsightsStore';
 
 function AppContent() {
   const { user, loading: authLoading, signOut } = useAuth();
-  const { syncStatus, loadFromSupabase, pushToSupabase, syncToSupabase } = useSupabaseSync();
+  const { syncStatus, loadFromSupabase, pushToSupabase, syncToSupabase, forceLoadFromSupabase } = useSupabaseSync();
+
+  // Expose recovery function globally for console access
+  useEffect(() => {
+    window.__forceSupabasePull = async () => {
+      console.log('Forcing data recovery from Supabase...');
+      const result = await forceLoadFromSupabase();
+      if (result) {
+        console.log('Data restored! Reloading page...');
+        setTimeout(() => window.location.reload(), 1000);
+      } else {
+        console.log('No data found in Supabase or recovery failed.');
+      }
+      return result;
+    };
+    return () => { delete window.__forceSupabasePull; };
+  }, [forceLoadFromSupabase]);
   const [profile, setProfile] = useState(null);
   const [notes, setNotes] = useState({});
   const [loading, setLoading] = useState(true);
