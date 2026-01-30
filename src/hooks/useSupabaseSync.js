@@ -32,6 +32,7 @@ export function useSupabaseSync() {
   const [syncErrors, setSyncErrors] = useState([]);
 
   // Load all data from Supabase into localStorage
+  // IMPORTANT: Only overwrites local data if Supabase has MORE data
   const loadFromSupabase = useCallback(async () => {
     if (!user?.id) return;
 
@@ -41,50 +42,81 @@ export function useSupabaseSync() {
     try {
       const results = await dataService.loadAllData(user.id);
 
-      // Store profile
+      // Helper: only update localStorage if Supabase has data AND local is empty or Supabase has more
+      const safeUpdate = (key, newData, isArray = false) => {
+        if (!newData) return false;
+        if (isArray && (!Array.isArray(newData) || newData.length === 0)) return false;
+
+        const existing = getItem(key);
+        if (!existing) {
+          // No local data, safe to set from Supabase
+          setItem(key, JSON.stringify(newData));
+          return true;
+        }
+
+        // Has local data - only overwrite if Supabase has MORE items (for arrays)
+        if (isArray) {
+          try {
+            const localData = JSON.parse(existing);
+            if (Array.isArray(localData) && newData.length > localData.length) {
+              setItem(key, JSON.stringify(newData));
+              return true;
+            }
+          } catch {
+            // Local data is corrupt, safe to overwrite
+            setItem(key, JSON.stringify(newData));
+            return true;
+          }
+        }
+
+        // For non-arrays, don't overwrite existing local data
+        // User can manually push to sync local → cloud
+        return false;
+      };
+
+      // Store profile (only if no local profile)
       if (results.profile) {
-        setItem(SYNC_KEYS.profile, JSON.stringify(results.profile));
+        safeUpdate(SYNC_KEYS.profile, results.profile, false);
       }
 
-      // Store activities
+      // Store activities (only if Supabase has more)
       if (results.activities?.length > 0) {
-        // Transform to match localStorage format
         const activities = results.activities.map(a => ({
           ...a,
           date: a.timestamp?.split('T')[0],
           weekOf: getWeekOf(a.timestamp),
         }));
-        setItem(SYNC_KEYS.activities, JSON.stringify(activities));
+        safeUpdate(SYNC_KEYS.activities, activities, true);
       }
 
-      // Store playbook
+      // Store playbook (only if no local playbook)
       if (results.playbook) {
-        setItem(SYNC_KEYS.playbook, JSON.stringify(results.playbook));
+        safeUpdate(SYNC_KEYS.playbook, results.playbook, false);
       }
 
-      // Store conversations
+      // Store conversations (only if Supabase has more)
       if (results.conversations?.length > 0) {
-        setItem(SYNC_KEYS.chats, JSON.stringify(results.conversations));
+        safeUpdate(SYNC_KEYS.chats, results.conversations, true);
       }
 
-      // Store insights
+      // Store insights (only if Supabase has more)
       if (results.insights?.length > 0) {
-        setItem(SYNC_KEYS.insights, JSON.stringify(results.insights));
+        safeUpdate(SYNC_KEYS.insights, results.insights, true);
       }
 
-      // Store check-ins
+      // Store check-ins (only if Supabase has more)
       if (results.checkins?.length > 0) {
-        setItem(SYNC_KEYS.checkins, JSON.stringify(results.checkins));
+        safeUpdate(SYNC_KEYS.checkins, results.checkins, true);
       }
 
-      // Store nutrition calibration
+      // Store nutrition calibration (only if no local)
       if (results.nutritionCalibration) {
-        setItem(SYNC_KEYS.nutrition, JSON.stringify(results.nutritionCalibration));
+        safeUpdate(SYNC_KEYS.nutrition, results.nutritionCalibration, false);
       }
 
-      // Store notes
+      // Store notes (only if no local notes)
       if (results.notes && Object.keys(results.notes).length > 0) {
-        setItem(SYNC_KEYS.notes, JSON.stringify(results.notes));
+        safeUpdate(SYNC_KEYS.notes, results.notes, false);
       }
 
       if (results.errors?.length > 0) {
@@ -223,26 +255,29 @@ export function useSupabaseSync() {
   }, [user?.id]);
 
   // Auto-load from Supabase when authenticated
+  // CONSERVATIVE: Only loads if localStorage is completely empty
   useEffect(() => {
     if (isAuthenticated && user?.id) {
-      // Check if we should load from Supabase
-      // Only load if localStorage is empty or on first auth
-      const lastSync = localStorage.getItem('health-advisor-last-supabase-sync');
-      const hasLocalData = getItem(SYNC_KEYS.profile);
+      // Only load from Supabase if there's NO local profile data
+      // This prevents overwriting existing local data
+      const hasLocalProfile = getItem(SYNC_KEYS.profile);
+      const hasLocalActivities = getItem(SYNC_KEYS.activities);
 
-      // If no local data, always load from Supabase
-      // If has local data but hasn't synced in 24 hours, load from Supabase
-      const shouldSync = !hasLocalData ||
-        !lastSync ||
-        (Date.now() - parseInt(lastSync)) > 24 * 60 * 60 * 1000;
-
-      if (shouldSync) {
+      // If user has ANY local data, don't auto-pull from Supabase
+      // They can manually trigger a sync if needed
+      if (!hasLocalProfile && !hasLocalActivities) {
+        console.log('[Sync] No local data found, loading from Supabase...');
         loadFromSupabase().then(() => {
           localStorage.setItem('health-advisor-last-supabase-sync', Date.now().toString());
         });
+      } else {
+        console.log('[Sync] Local data exists, skipping Supabase pull to preserve data');
+        // Instead, push local data to Supabase (background, won't block)
+        // This ensures Supabase gets the local data
+        pushToSupabase();
       }
     }
-  }, [isAuthenticated, user?.id, loadFromSupabase]);
+  }, [isAuthenticated, user?.id, loadFromSupabase, pushToSupabase]);
 
   return {
     syncStatus,
