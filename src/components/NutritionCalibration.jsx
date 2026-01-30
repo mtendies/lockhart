@@ -41,9 +41,514 @@ import {
   Flame,
   HelpCircle,
   Info,
+  Target,
+  Salad,
+  TrendingUp,
+  Lightbulb,
 } from 'lucide-react';
-import { estimateCalories, needsClarification } from '../calorieEstimator';
+import { estimateCalories, needsClarification, SOURCE_URLS } from '../calorieEstimator';
 import { getPendingAdditionFor, approveAddition, removeAddition } from '../advisorAdditionsStore';
+import { getProfile } from '../store';
+
+/**
+ * Calculate daily calorie budget using Mifflin-St Jeor equation
+ */
+function calculateDailyCalorieBudget(profile) {
+  if (!profile) return 2000; // Default fallback
+
+  // Extract and convert profile data
+  const age = parseInt(profile.age) || 30;
+  const sex = profile.sex?.toLowerCase() || 'male';
+
+  // Convert weight to kg
+  let weightKg = parseFloat(profile.weight) || 70;
+  if (profile.weightUnit === 'lbs') {
+    weightKg = weightKg * 0.453592;
+  }
+
+  // Convert height to cm
+  let heightCm = parseFloat(profile.height) || 170;
+  if (profile.heightUnit === 'in') {
+    heightCm = heightCm * 2.54;
+  } else if (profile.heightUnit === 'ft') {
+    heightCm = heightCm * 30.48;
+  }
+
+  // Mifflin-St Jeor equation for BMR
+  let bmr;
+  if (sex === 'male') {
+    bmr = 10 * weightKg + 6.25 * heightCm - 5 * age + 5;
+  } else {
+    bmr = 10 * weightKg + 6.25 * heightCm - 5 * age - 161;
+  }
+
+  // Activity multiplier
+  const activityMultipliers = {
+    sedentary: 1.2,
+    light: 1.375,
+    lightly_active: 1.375,
+    moderate: 1.55,
+    moderately_active: 1.55,
+    active: 1.725,
+    very_active: 1.9,
+  };
+
+  const activityLevel = profile.activityLevel?.toLowerCase().replace(/\s+/g, '_') || 'moderate';
+  const multiplier = activityMultipliers[activityLevel] || 1.55;
+
+  const tdee = bmr * multiplier;
+
+  // Check for weight-related goals (check all possible key variations)
+  const goals = profile.goals || [];
+  const hasLoseFat = goals.includes('fat_loss') || goals.includes('lose_fat') || goals.includes('loseFat') || goals.includes('weightLoss') || goals.includes('weight_loss');
+  const hasBuildMuscle = goals.includes('build_muscle') || goals.includes('buildMuscle') || goals.includes('muscle_gain') || goals.includes('muscleGain');
+
+  // Fat loss takes priority over muscle gain for calorie calculation
+  if (hasLoseFat) {
+    return Math.round(tdee - 500); // 500 cal deficit for weight loss
+  } else if (hasBuildMuscle) {
+    return Math.round(tdee + 300); // 300 cal surplus for muscle building
+  }
+
+  return Math.round(tdee); // Maintenance
+}
+
+/**
+ * Get today's total calories from meals
+ */
+function getTodaysCaloriesFromMeals(dayData) {
+  if (!dayData?.meals || !Array.isArray(dayData.meals)) return 0;
+
+  return dayData.meals.reduce((total, meal) => {
+    if (meal.content && meal.content.trim()) {
+      const estimate = estimateCalories(meal.content);
+      return total + estimate.totalCalories;
+    }
+    return total;
+  }, 0);
+}
+
+/**
+ * Get calorie status based on remaining calories
+ */
+function getCalorieStatus(remaining, budget) {
+  const percentUsed = ((budget - remaining) / budget) * 100;
+
+  if (remaining < 0) return 'over';
+  if (percentUsed >= 80) return 'approaching';
+  return 'on_track';
+}
+
+/**
+ * Smart Suggestions Popup Component
+ */
+function SmartSuggestionsPopup({ remainingCalories, profile, onClose }) {
+  // Determine user's dietary preferences
+  const restrictions = profile?.restrictions?.toLowerCase() || '';
+  const isVegetarian = restrictions.includes('vegetarian') || restrictions.includes('vegan');
+  const isDairyFree = restrictions.includes('dairy') || restrictions.includes('lactose');
+
+  // Filter meal suggestions based on preferences
+  const filterSuggestions = (items) => {
+    return items.filter(item => {
+      if (isVegetarian && item.hasMeat) return false;
+      if (isDairyFree && item.hasDairy) return false;
+      return true;
+    });
+  };
+
+  // Meal suggestions (500-600 cal)
+  const dinnerSuggestions = filterSuggestions([
+    { text: 'Grilled chicken breast with roasted vegetables', cal: '~500 cal', hasMeat: true },
+    { text: 'Salmon with quinoa and steamed broccoli', cal: '~550 cal', hasMeat: true },
+    { text: 'Turkey stir-fry with brown rice', cal: '~480 cal', hasMeat: true },
+    { text: 'Tofu and vegetable curry with rice', cal: '~520 cal' },
+    { text: 'Pasta primavera with olive oil', cal: '~550 cal' },
+    { text: 'Bean and vegetable burrito bowl', cal: '~500 cal' },
+  ]);
+
+  // Snack suggestions (150-250 cal)
+  const snackSuggestions = filterSuggestions([
+    { text: 'Greek yogurt with berries', cal: '~150 cal', hasDairy: true },
+    { text: 'Apple with 2 tbsp almond butter', cal: '~250 cal' },
+    { text: 'Handful of almonds (~23 nuts)', cal: '~165 cal' },
+    { text: 'Protein shake', cal: '~120 cal' },
+    { text: 'Cottage cheese with fruit', cal: '~180 cal', hasDairy: true },
+    { text: 'Hummus with veggie sticks', cal: '~150 cal' },
+  ]);
+
+  // Light snacks (under 100 cal)
+  const lightSnackSuggestions = filterSuggestions([
+    { text: 'Small apple', cal: '~80 cal' },
+    { text: 'Cup of berries', cal: '~85 cal' },
+    { text: 'String cheese', cal: '~80 cal', hasDairy: true },
+    { text: 'Hard boiled egg', cal: '~78 cal' },
+    { text: 'Small handful of almonds (10-12)', cal: '~80 cal' },
+    { text: 'Celery with 1 tbsp peanut butter', cal: '~100 cal' },
+  ]);
+
+  // Determine which suggestions to show
+  let content;
+  let title;
+  let icon;
+  let tipText;
+
+  if (remainingCalories > 500) {
+    title = `You have ~${remainingCalories.toLocaleString()} calories remaining today`;
+    icon = <Salad size={20} className="text-green-500" />;
+    tipText = "You could have a solid dinner AND a snack and still stay under your target!";
+    content = (
+      <>
+        <div className="mb-4">
+          <p className="text-sm font-medium text-gray-700 mb-2">Dinner ideas (~500-600 cal):</p>
+          <ul className="space-y-1.5">
+            {dinnerSuggestions.slice(0, 3).map((item, i) => (
+              <li key={i} className="text-sm text-gray-600 flex justify-between">
+                <span>• {item.text}</span>
+                <span className="text-gray-400 ml-2">{item.cal}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div>
+          <p className="text-sm font-medium text-gray-700 mb-2">Snack ideas (~150-250 cal):</p>
+          <ul className="space-y-1.5">
+            {snackSuggestions.slice(0, 4).map((item, i) => (
+              <li key={i} className="text-sm text-gray-600 flex justify-between">
+                <span>• {item.text}</span>
+                <span className="text-gray-400 ml-2">{item.cal}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </>
+    );
+  } else if (remainingCalories > 200) {
+    title = `You have ~${remainingCalories.toLocaleString()} calories remaining today`;
+    icon = <Target size={20} className="text-blue-500" />;
+    tipText = "A satisfying snack would fit perfectly!";
+    content = (
+      <div>
+        <p className="text-sm font-medium text-gray-700 mb-2">Snack ideas that fit your budget:</p>
+        <ul className="space-y-1.5">
+          {snackSuggestions.map((item, i) => (
+            <li key={i} className="text-sm text-gray-600 flex justify-between">
+              <span>• {item.text}</span>
+              <span className="text-gray-400 ml-2">{item.cal}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    );
+  } else if (remainingCalories > 0) {
+    title = "You're almost at your target for today!";
+    icon = <CheckCircle2 size={20} className="text-green-500" />;
+    tipText = "Going slightly over occasionally is totally fine! Consistency over perfection.";
+    content = (
+      <div>
+        <p className="text-sm text-gray-600 mb-3">
+          You have ~{remainingCalories} calories remaining.
+        </p>
+        <p className="text-sm font-medium text-gray-700 mb-2">If you're still hungry, consider:</p>
+        <ul className="space-y-1.5">
+          {lightSnackSuggestions.slice(0, 4).map((item, i) => (
+            <li key={i} className="text-sm text-gray-600 flex justify-between">
+              <span>• {item.text}</span>
+              <span className="text-gray-400 ml-2">{item.cal}</span>
+            </li>
+          ))}
+          <li className="text-sm text-gray-600">• Raw veggies (cucumber, celery, peppers)</li>
+          <li className="text-sm text-gray-600">• Herbal tea</li>
+        </ul>
+      </div>
+    );
+  } else {
+    const overAmount = Math.abs(remainingCalories);
+    title = `You're ~${overAmount.toLocaleString()} calories over your target today`;
+    icon = <TrendingUp size={20} className="text-amber-500" />;
+    tipText = "Remember: It's about the weekly average, not perfection every single day.";
+    content = (
+      <div>
+        <p className="text-sm text-gray-600 mb-4">
+          No worries! One day doesn't define your progress.
+        </p>
+        <p className="text-sm font-medium text-gray-700 mb-2">Options:</p>
+        <ul className="space-y-2 text-sm text-gray-600">
+          <li>• <strong>Call it a day</strong> - tomorrow is a fresh start</li>
+          <li>• <strong>Add some extra activity</strong> - a 30-min walk burns ~150 cal</li>
+          <li>• <strong>Slightly reduce tomorrow's intake</strong> to balance out</li>
+        </ul>
+      </div>
+    );
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center" onClick={onClose}>
+      <div
+        className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full sm:max-w-md max-h-[85vh] overflow-hidden animate-slide-up sm:animate-scale-in"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="sticky top-0 bg-white border-b border-gray-100 px-4 py-3 sm:px-5 sm:py-4 z-10">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-gray-100 rounded-lg">
+                {icon}
+              </div>
+              <h3 className="font-semibold text-gray-900 text-sm sm:text-base">Smart Suggestions</h3>
+            </div>
+            <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg -mr-1">
+              <X size={20} className="text-gray-500" />
+            </button>
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="overflow-y-auto max-h-[calc(85vh-140px)] px-4 py-4 sm:px-5">
+          <p className="font-medium text-gray-900 mb-4">{title}</p>
+
+          {content}
+
+          {/* Tip */}
+          <div className="mt-4 p-3 bg-amber-50 rounded-xl">
+            <div className="flex gap-2">
+              <Lightbulb size={16} className="text-amber-600 flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-amber-800">{tipText}</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="sticky bottom-0 bg-white border-t border-gray-100 px-4 py-3 sm:px-5">
+          <p className="text-xs text-gray-400 text-center">
+            These are estimates. Actual calories may vary.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Calorie Progress Section Component - Shows at top of nutrition profile
+ */
+function CalorieProgressSection({ dayData, profile, todayDay }) {
+  const [showSuggestions, setShowSuggestions] = useState(false);
+
+  const consumedCalories = getTodaysCaloriesFromMeals(dayData);
+  const targetCalories = calculateDailyCalorieBudget(profile);
+  const remainingCalories = targetCalories - consumedCalories;
+  const percentUsed = Math.min(100, Math.round((consumedCalories / targetCalories) * 100));
+  const status = getCalorieStatus(remainingCalories, targetCalories);
+
+  // Progress bar color based on status
+  const getProgressColor = () => {
+    if (status === 'over') return 'bg-red-500';
+    if (status === 'approaching') return 'bg-amber-500';
+    return 'bg-green-500';
+  };
+
+  // Text color based on status
+  const getRemainingColor = () => {
+    if (status === 'over') return 'text-red-600';
+    if (status === 'approaching') return 'text-amber-600';
+    return 'text-green-600';
+  };
+
+  if (!todayDay) return null; // Don't show on weekends
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-4 mb-4">
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">Today's Calories</h3>
+      </div>
+
+      {/* Calories display */}
+      <div className="flex items-baseline justify-between mb-3">
+        <div className="flex items-baseline gap-1">
+          <span className="text-2xl font-bold text-gray-900">{consumedCalories.toLocaleString()}</span>
+          <span className="text-gray-400">/</span>
+          <span className="text-lg text-gray-500">{targetCalories.toLocaleString()} cal</span>
+        </div>
+
+        <button
+          onClick={() => setShowSuggestions(true)}
+          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-sm font-medium transition-colors ${getRemainingColor()} hover:bg-gray-50`}
+        >
+          {remainingCalories >= 0 ? (
+            <>{remainingCalories.toLocaleString()} cal remaining</>
+          ) : (
+            <>{Math.abs(remainingCalories).toLocaleString()} cal over</>
+          )}
+          <Info size={14} />
+        </button>
+      </div>
+
+      {/* Progress bar */}
+      <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
+        <div
+          className={`h-full ${getProgressColor()} rounded-full transition-all duration-500`}
+          style={{ width: `${Math.min(percentUsed, 100)}%` }}
+        />
+      </div>
+
+      <div className="flex justify-between mt-1.5">
+        <span className="text-xs text-gray-400">{percentUsed}% of daily target</span>
+        {status === 'on_track' && consumedCalories > 0 && (
+          <span className="text-xs text-green-600">On track</span>
+        )}
+        {status === 'approaching' && (
+          <span className="text-xs text-amber-600">Approaching target</span>
+        )}
+        {status === 'over' && (
+          <span className="text-xs text-red-600">Over target</span>
+        )}
+      </div>
+
+      {/* Smart Suggestions Popup */}
+      {showSuggestions && (
+        <SmartSuggestionsPopup
+          remainingCalories={remainingCalories}
+          profile={profile}
+          onClose={() => setShowSuggestions(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Completed Days Dropdown Component - Shows at bottom
+ */
+function CompletedDaysDropdown({ progress, calibrationData, onEditDay }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  // Encouraging messages based on progress
+  const getEncouragingMessage = () => {
+    const { completed, remaining } = progress;
+
+    if (remaining === 0) {
+      return { text: "Nutrition Profile Unlocked! View your personalized insights.", icon: "🎉" };
+    }
+
+    const messages = {
+      0: { text: "Great start! 5 days until your nutrition insights unlock.", icon: "🚀" },
+      1: { text: "Great start! 4 more days to unlock your nutrition insights.", icon: "🌱" },
+      2: { text: "You're building momentum! 3 more days to go.", icon: "💪" },
+      3: { text: "Halfway there! Keep logging to unlock personalized insights.", icon: "⭐" },
+      4: { text: "Almost there! Just 1 more day.", icon: "🔥" },
+      5: { text: "Final day! Complete today to unlock your nutrition profile.", icon: "🏆" },
+    };
+
+    return messages[completed] || messages[0];
+  };
+
+  const encouragement = getEncouragingMessage();
+
+  // Get day status icon
+  const getDayStatus = (day) => {
+    const dayData = calibrationData.days[day];
+    const isToday = isDayToday(day);
+
+    if (dayData.completed) return { icon: '✓', color: 'text-green-600 bg-green-100' };
+    if (isToday) return { icon: '●', color: 'text-blue-600 bg-blue-100' };
+    if (isDayInPast(day)) return { icon: '○', color: 'text-amber-600 bg-amber-100' };
+    return { icon: '○', color: 'text-gray-400 bg-gray-100' };
+  };
+
+  // Get total calories for a day
+  const getDayCalories = (day) => {
+    const dayData = calibrationData.days[day];
+    return getTodaysCaloriesFromMeals(dayData);
+  };
+
+  return (
+    <div className="mt-4 pt-3 border-t border-amber-200">
+      {/* Collapsed/Expandable Header */}
+      <button
+        onClick={() => setIsExpanded(!isExpanded)}
+        className="w-full flex items-center justify-between p-2 rounded-lg hover:bg-amber-100/50 transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          <span className="text-lg">{encouragement.icon}</span>
+          <span className="text-sm font-medium text-amber-800">
+            Day {progress.completed + (progress.todayDay && !calibrationData.days[progress.todayDay]?.completed ? 1 : 0)} of 5
+            {progress.completed > 0 && progress.remaining > 0 && " - Keep it up!"}
+          </span>
+        </div>
+        <div className="flex items-center gap-2 text-amber-600">
+          <span className="text-xs">View completed days</span>
+          {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+        </div>
+      </button>
+
+      {/* Expanded Content */}
+      {isExpanded && (
+        <div className="mt-3 bg-white rounded-xl border border-amber-100 overflow-hidden">
+          {CALIBRATION_DAYS.map((day) => {
+            const dayData = calibrationData.days[day];
+            const status = getDayStatus(day);
+            const isToday = isDayToday(day);
+            const calories = getDayCalories(day);
+
+            return (
+              <div
+                key={day}
+                className={`flex items-center justify-between px-3 py-2.5 border-b border-gray-100 last:border-b-0 ${
+                  isToday ? 'bg-blue-50' : ''
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium ${status.color}`}>
+                    {status.icon}
+                  </span>
+                  <div>
+                    <span className="text-sm font-medium text-gray-800">
+                      {DAY_LABELS[day]}
+                      {isToday && <span className="text-blue-600 ml-1">(Today)</span>}
+                    </span>
+                    <span className="text-xs text-gray-500 ml-2">
+                      {dayData.completed ? (
+                        `Complete${calories > 0 ? ` (${calories.toLocaleString()} cal)` : ''}`
+                      ) : isToday ? (
+                        `In Progress${calories > 0 ? ` (${calories.toLocaleString()} cal)` : ''}`
+                      ) : isDayInPast(day) ? (
+                        'Missed'
+                      ) : (
+                        'Not started'
+                      )}
+                    </span>
+                  </div>
+                </div>
+
+                {dayData.completed && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onEditDay(day);
+                    }}
+                    className="text-xs text-amber-600 hover:text-amber-700 font-medium px-2 py-1 hover:bg-amber-50 rounded"
+                  >
+                    Edit
+                  </button>
+                )}
+              </div>
+            );
+          })}
+
+          {/* Encouragement message */}
+          <div className="px-3 py-2.5 bg-amber-50 text-center">
+            <p className="text-xs text-amber-700">
+              {progress.remaining > 0
+                ? `${progress.remaining} more day${progress.remaining > 1 ? 's' : ''} until your personalized insights unlock!`
+                : 'Your personalized insights are ready!'}
+            </p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 import {
   getCalibrationData,
   startCalibration,
@@ -78,55 +583,191 @@ import {
 } from '../nutritionCalibrationStore';
 
 /**
- * Calorie Estimator Popup
+ * Source Detail Sub-Popup for calorie sources
  */
-function CalorieEstimatorPopup({ content, onClose }) {
-  const estimate = estimateCalories(content);
+function SourceDetailPopup({ item, onClose }) {
+  const [copied, setCopied] = useState(false);
+  const sourceUrl = item.sourceUrl || SOURCE_URLS[item.source] || null;
+
+  function handleCopyLink() {
+    if (sourceUrl) {
+      navigator.clipboard.writeText(sourceUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  }
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onClose}>
+    <div
+      className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4"
+      onClick={onClose}
+    >
       <div
-        className="bg-white rounded-2xl shadow-xl max-w-sm w-full max-h-[80vh] overflow-hidden"
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-4 animate-scale-in select-text"
         onClick={(e) => e.stopPropagation()}
+        style={{ userSelect: 'text' }}
       >
-        <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Flame size={18} className="text-orange-500" />
-            <span className="font-semibold text-gray-900">Estimated Calories</span>
-          </div>
+        <div className="flex items-center justify-between mb-3">
+          <h4 className="font-semibold text-gray-900 text-sm">{item.food} - Calorie Source</h4>
           <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg">
-            <X size={18} className="text-gray-500" />
+            <X size={16} className="text-gray-500" />
           </button>
         </div>
 
-        <div className="p-4">
-          {/* Total */}
-          <div className="text-center mb-4">
-            <span className="text-3xl font-bold text-gray-900">~{estimate.totalCalories}</span>
-            <span className="text-gray-500 ml-1">cal</span>
-            <p className="text-xs text-gray-400 mt-1">
-              {estimate.confidence === 'high' ? 'Good estimate' : estimate.confidence === 'medium' ? 'Moderate confidence' : 'Rough estimate'}
+        <div className="space-y-3">
+          {/* Calorie info */}
+          <div className="p-3 bg-orange-50 rounded-lg">
+            <p className="text-sm text-gray-800 font-medium">
+              ~{item.calories} calories
+            </p>
+            <p className="text-xs text-gray-600 mt-1">
+              {item.baseServing}
             </p>
           </div>
 
-          {/* Breakdown */}
-          {estimate.breakdown.length > 0 && (
-            <div className="mb-4">
-              <p className="text-xs font-medium text-gray-500 uppercase mb-2">Breakdown</p>
-              <div className="space-y-2">
-                {estimate.breakdown.map((item, idx) => (
-                  <div key={idx} className="flex justify-between text-sm">
-                    <span className="text-gray-700">{item.food} <span className="text-gray-400">({item.serving})</span></span>
-                    <span className="text-gray-600 font-medium">~{item.calories} cal</span>
-                  </div>
-                ))}
+          {/* Calculation */}
+          <div className="text-xs text-gray-600">
+            <span className="text-gray-400">Calculation: </span>
+            <span>{item.calculation}</span>
+          </div>
+
+          {/* Source */}
+          <div className="p-3 bg-blue-50 rounded-lg">
+            <p className="text-xs text-gray-500 mb-1">Source</p>
+            <p className="text-sm font-medium text-blue-700">{item.source}</p>
+            {sourceUrl && (
+              <p className="text-xs text-blue-600 mt-1 break-all">{sourceUrl}</p>
+            )}
+          </div>
+
+          {/* Action buttons */}
+          <div className="flex gap-2 pt-2">
+            {sourceUrl && (
+              <button
+                onClick={handleCopyLink}
+                className="flex-1 px-3 py-2 text-xs font-medium bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors flex items-center justify-center gap-1"
+              >
+                {copied ? (
+                  <>
+                    <Check size={12} /> Copied!
+                  </>
+                ) : (
+                  'Copy Link'
+                )}
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="flex-1 px-3 py-2 text-xs font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Calorie Estimator Popup - Mobile-friendly with detailed breakdown and selectable text
+ */
+function CalorieEstimatorPopup({ content, onClose }) {
+  const [selectedItem, setSelectedItem] = useState(null);
+  const estimate = estimateCalories(content);
+
+  const confidenceLabels = {
+    low: { text: 'Rough estimate', color: 'text-amber-600 bg-amber-50' },
+    medium: { text: 'Moderate confidence', color: 'text-blue-600 bg-blue-50' },
+    high: { text: 'Good estimate', color: 'text-green-600 bg-green-50' },
+  };
+  const confidence = confidenceLabels[estimate.confidence] || confidenceLabels.low;
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center" onClick={onClose}>
+      <div
+        className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full sm:max-w-md max-h-[85vh] overflow-hidden animate-slide-up sm:animate-scale-in select-text"
+        onClick={(e) => e.stopPropagation()}
+        style={{ userSelect: 'text' }}
+      >
+        {/* Header - sticky */}
+        <div className="sticky top-0 bg-white border-b border-gray-100 px-4 py-3 sm:px-5 sm:py-4 z-10">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <div className="p-1.5 sm:p-2 bg-orange-100 rounded-lg">
+                <Flame size={18} className="text-orange-500" />
               </div>
+              <div>
+                <h3 className="font-semibold text-gray-900 text-sm sm:text-base">Calorie Estimate</h3>
+                <span className={`text-xs px-1.5 py-0.5 rounded ${confidence.color}`}>
+                  {confidence.text}
+                </span>
+              </div>
+            </div>
+            <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg -mr-1">
+              <X size={20} className="text-gray-500" />
+            </button>
+          </div>
+        </div>
+
+        {/* Scrollable content */}
+        <div className="overflow-y-auto max-h-[calc(85vh-120px)] px-4 py-4 sm:px-5">
+          {/* Total */}
+          <div className="text-center mb-5 pb-4 border-b border-gray-100">
+            <p className="text-4xl sm:text-5xl font-bold text-orange-600">{estimate.totalCalories}</p>
+            <p className="text-sm text-gray-500 mt-1">estimated calories</p>
+          </div>
+
+          {/* Line-item breakdown */}
+          {estimate.items && estimate.items.length > 0 && (
+            <div className="space-y-3">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                Breakdown ({estimate.items.length} item{estimate.items.length !== 1 ? 's' : ''})
+              </p>
+
+              {estimate.items.map((item, idx) => (
+                <div key={idx} className="bg-gray-50 rounded-xl p-3 space-y-2">
+                  {/* Food name and calories */}
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="text-sm font-medium text-gray-900">{item.food}</span>
+                    <span className="text-sm font-bold text-orange-600 whitespace-nowrap">{item.calories} cal</span>
+                  </div>
+
+                  {/* Calculation detail */}
+                  <div className="text-xs text-gray-500 space-y-0.5">
+                    <p className="flex items-center gap-1">
+                      <span className="text-gray-400">Calc:</span>
+                      <span>{item.calculation}</span>
+                    </p>
+                    {item.source && (
+                      <p className="flex items-center gap-1">
+                        <span className="text-gray-400">Source:</span>
+                        <button
+                          onClick={() => setSelectedItem(item)}
+                          className="text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1"
+                        >
+                          {item.source}
+                          <Info size={10} />
+                        </button>
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* No items detected */}
+          {(!estimate.items || estimate.items.length === 0) && (
+            <div className="text-center py-4">
+              <p className="text-sm text-gray-500">No specific foods detected</p>
+              <p className="text-xs text-gray-400 mt-1">Try being more specific with food names</p>
             </div>
           )}
 
           {/* Tips */}
-          {estimate.tips.length > 0 && (
-            <div className="bg-amber-50 border border-amber-100 rounded-lg p-3 mb-4">
+          {estimate.tips && estimate.tips.length > 0 && (
+            <div className="mt-4 p-3 bg-amber-50 rounded-xl">
               <div className="flex gap-2">
                 <Info size={14} className="text-amber-600 flex-shrink-0 mt-0.5" />
                 <div className="text-xs text-amber-800">
@@ -138,13 +779,23 @@ function CalorieEstimatorPopup({ content, onClose }) {
               </div>
             </div>
           )}
+        </div>
 
-          {/* Disclaimer */}
-          <p className="text-[10px] text-gray-400 text-center">
-            This is an estimate based on typical portions. Actual calories may vary based on preparation and exact quantities.
+        {/* Footer - sticky */}
+        <div className="sticky bottom-0 bg-white border-t border-gray-100 px-4 py-3 sm:px-5 sm:py-4">
+          <p className="text-xs text-gray-400 text-center">
+            Estimates based on USDA FoodData Central & manufacturer labels
           </p>
         </div>
       </div>
+
+      {/* Source Detail Sub-Popup */}
+      {selectedItem && (
+        <SourceDetailPopup
+          item={selectedItem}
+          onClose={() => setSelectedItem(null)}
+        />
+      )}
     </div>
   );
 }
@@ -1550,6 +2201,9 @@ export default function NutritionCalibration({ onComplete, compact = false, prof
     ? sortedDays.filter(day => isDayToday(day) || isDayInPast(day) || calibrationData.days[day].completed)
     : sortedDays;
 
+  // Get today's day data for calorie progress
+  const todayDayData = todayDay ? calibrationData.days[todayDay] : null;
+
   return (
     <div className={`bg-gradient-to-br from-amber-50 to-orange-50 rounded-2xl border border-amber-200 ${compact ? 'p-4' : 'p-5'}`}>
       {/* Header */}
@@ -1559,7 +2213,7 @@ export default function NutritionCalibration({ onComplete, compact = false, prof
         </div>
         <div className="flex-1">
           <h2 className={`font-semibold text-gray-900 ${compact ? 'text-base' : 'text-lg'}`}>
-            Unlock Your Nutrition Profile
+            Nutrition Profile
           </h2>
           <p className="text-sm text-amber-700 mt-0.5">
             {progress.remaining > 0
@@ -1569,19 +2223,23 @@ export default function NutritionCalibration({ onComplete, compact = false, prof
         </div>
       </div>
 
-      {/* Progress bar */}
-      <div className="mb-4">
-        <div className="flex items-center justify-between mb-1.5">
-          <span className="text-xs font-medium text-amber-800">{progress.completed} of 5 days logged</span>
-          <span className="text-xs text-amber-600">{progress.percentage}% complete</span>
+      {/* FEATURE 1: Calorie Progress Section at TOP */}
+      {todayDay && todayDayData && (
+        <CalorieProgressSection
+          dayData={todayDayData}
+          profile={profile}
+          todayDay={todayDay}
+        />
+      )}
+
+      {/* Today's date label */}
+      {todayDay && (
+        <div className="mb-3">
+          <p className="text-sm font-medium text-gray-700">
+            {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })} · Today
+          </p>
         </div>
-        <div className="h-2 bg-amber-100 rounded-full overflow-hidden">
-          <div
-            className="h-full bg-gradient-to-r from-amber-400 to-orange-400 rounded-full transition-all duration-500"
-            style={{ width: `${progress.percentage}%` }}
-          />
-        </div>
-      </div>
+      )}
 
       {/* Weekend message - shown on weekends but completed days still visible below */}
       {!todayDay && (
@@ -1622,12 +2280,15 @@ export default function NutritionCalibration({ onComplete, compact = false, prof
         })}
       </div>
 
-      {/* Motivational footer */}
-      <div className="mt-4 pt-3 border-t border-amber-200">
-        <p className="text-xs text-amber-700 text-center">
-          Track 5 days of meals to unlock your Daily Nutritional Profile with personalized insights.
-        </p>
-      </div>
+      {/* FEATURE 3: Combined Day Progress + Completed Days Dropdown at BOTTOM */}
+      <CompletedDaysDropdown
+        progress={progress}
+        calibrationData={calibrationData}
+        onEditDay={(day) => {
+          setExpandedDay(day);
+          setJustCompleted(null);
+        }}
+      />
 
       {/* Post-calibration options modal */}
       {showTrackingOptions && (

@@ -30,8 +30,171 @@ import {
   Pencil,
   FolderOpen,
   Edit3,
+  Flame,
+  MessageCircle,
+  CheckCircle,
 } from 'lucide-react';
+import { estimateCalories, SOURCE_URLS } from '../calorieEstimator';
 import { getPlaybook } from '../playbookStore';
+import { logActivity, deleteActivity, ACTIVITY_TYPES, ACTIVITY_SOURCES, WORKOUT_TYPES } from '../activityLogStore';
+import DeleteConfirmationModal from './DeleteConfirmationModal';
+
+/**
+ * MET values for common exercises (Metabolic Equivalent of Task)
+ * Calories burned = MET × weight(kg) × duration(hours)
+ */
+const EXERCISE_DATA = {
+  // Exercise: { met: base MET value, defaultDuration: minutes per session }
+  'running': { met: 9.8, defaultDuration: 45 },
+  'weightlifting': { met: 5.0, defaultDuration: 60 },
+  'yoga': { met: 3.0, defaultDuration: 60 },
+  'cycling': { met: 7.5, defaultDuration: 45 },
+  'swimming': { met: 7.0, defaultDuration: 45 },
+  'hiit': { met: 9.0, defaultDuration: 30 },
+  'walking': { met: 3.5, defaultDuration: 45 },
+  'pilates': { met: 3.5, defaultDuration: 50 },
+  'basketball': { met: 6.5, defaultDuration: 60 },
+  'tennis': { met: 7.0, defaultDuration: 60 },
+  'rock climbing': { met: 5.8, defaultDuration: 90 },
+  'martial arts': { met: 6.0, defaultDuration: 60 },
+  'dancing': { met: 5.0, defaultDuration: 60 },
+  'rowing': { met: 7.0, defaultDuration: 30 },
+};
+
+// Intensity multipliers for training intensity
+const INTENSITY_MULTIPLIERS = {
+  'light': 0.85,
+  'moderate': 1.0,
+  'hard': 1.2,
+  'mixed': 1.05,
+};
+
+/**
+ * Calculate weekly exercise calories from profile exercises
+ */
+function calculateWeeklyExerciseCalories(exercises, weightKg, trainingIntensity) {
+  if (!exercises || !Array.isArray(exercises) || exercises.length === 0) {
+    return 0;
+  }
+
+  const intensityMult = INTENSITY_MULTIPLIERS[trainingIntensity] || 1.0;
+
+  let weeklyCalories = 0;
+  for (const exercise of exercises) {
+    const name = exercise.name?.toLowerCase() || '';
+    const frequency = exercise.frequency || 0;
+    const duration = exercise.duration || EXERCISE_DATA[name]?.defaultDuration || 45;
+
+    // Find matching exercise data (partial match)
+    let exerciseInfo = EXERCISE_DATA[name];
+    if (!exerciseInfo) {
+      // Try partial matching
+      for (const [key, data] of Object.entries(EXERCISE_DATA)) {
+        if (name.includes(key) || key.includes(name)) {
+          exerciseInfo = data;
+          break;
+        }
+      }
+    }
+
+    // Default to moderate activity if exercise not found
+    const met = exerciseInfo?.met || 4.5;
+    const durationHours = duration / 60;
+
+    // Calories per session = MET × weight(kg) × duration(hours) × intensity
+    const caloriesPerSession = met * weightKg * durationHours * intensityMult;
+    weeklyCalories += caloriesPerSession * frequency;
+  }
+
+  return Math.round(weeklyCalories);
+}
+
+/**
+ * Calculate daily calorie budget using BMR + NEAT + Exercise
+ */
+function calculateDailyCalorieBudget(profile) {
+  if (!profile) return 2000;
+
+  const age = parseInt(profile.age) || 30;
+  const sex = profile.sex?.toLowerCase() || 'male';
+
+  let weightKg = parseFloat(profile.weight) || 70;
+  if (profile.weightUnit === 'lbs') {
+    weightKg = weightKg * 0.453592;
+  }
+
+  let heightCm = parseFloat(profile.height) || 170;
+  if (profile.heightUnit === 'in') {
+    heightCm = heightCm * 2.54;
+  }
+
+  // Mifflin-St Jeor for BMR
+  let bmr;
+  if (sex === 'male') {
+    bmr = 10 * weightKg + 6.25 * heightCm - 5 * age + 5;
+  } else {
+    bmr = 10 * weightKg + 6.25 * heightCm - 5 * age - 161;
+  }
+
+  // NEAT multiplier (Non-Exercise Activity Thermogenesis) - based on daily/work activity
+  const neatMultipliers = {
+    sedentary: 1.2,      // Desk job, minimal movement
+    light: 1.3,          // Some walking, light activity
+    lightly_active: 1.3,
+    moderate: 1.4,       // On feet part of day
+    moderately_active: 1.4,
+    active: 1.5,         // Physical job
+    very_active: 1.6,    // Very physical job
+  };
+
+  const activityLevel = profile.activityLevel?.toLowerCase().replace(/\s+/g, '_') || 'moderate';
+  const neatMultiplier = neatMultipliers[activityLevel] || 1.3;
+
+  // Base TDEE from BMR + NEAT (non-exercise daily activity)
+  const baseTdee = bmr * neatMultiplier;
+
+  // Add exercise calories
+  const exercises = profile.exercises || [];
+  const trainingIntensity = profile.trainingIntensity || 'moderate';
+  const weeklyExerciseCalories = calculateWeeklyExerciseCalories(exercises, weightKg, trainingIntensity);
+  const dailyExerciseCalories = weeklyExerciseCalories / 7;
+
+  // Total TDEE = base + exercise
+  const totalTdee = baseTdee + dailyExerciseCalories;
+
+  // Goal adjustments
+  const goals = profile.goals || [];
+  const hasLoseFat = goals.includes('fat_loss') || goals.includes('lose_fat') || goals.includes('loseFat') || goals.includes('weightLoss') || goals.includes('weight_loss');
+  const hasBuildMuscle = goals.includes('build_muscle') || goals.includes('buildMuscle') || goals.includes('muscle_gain') || goals.includes('muscleGain');
+
+  // DEBUG: Log calculation details
+  console.log('Calorie Budget Debug:', {
+    age, sex, weightKg, heightCm, bmr,
+    activityLevel, neatMultiplier, baseTdee,
+    exercises: exercises.map(e => `${e.name}: ${e.frequency}/wk`),
+    trainingIntensity, weeklyExerciseCalories, dailyExerciseCalories,
+    totalTdee, goals, hasLoseFat, hasBuildMuscle,
+  });
+
+  // Fat loss takes priority over muscle gain
+  if (hasLoseFat) return Math.round(totalTdee - 500);
+  if (hasBuildMuscle) return Math.round(totalTdee + 300);
+  return Math.round(totalTdee);
+}
+
+/**
+ * Get total calories from meals array
+ */
+function getTodaysCaloriesFromMeals(meals) {
+  if (!meals || !Array.isArray(meals)) return 0;
+  return meals.reduce((total, meal) => {
+    if (meal.content && meal.content.trim()) {
+      const estimate = estimateCalories(meal.content);
+      return total + estimate.totalCalories;
+    }
+    return total;
+  }, 0);
+}
 import { getWeeklyFocusProgress, generateWeeklyWins, setCustomTarget } from '../weeklyProgressStore';
 import {
   isInCalibrationPeriod,
@@ -71,38 +234,54 @@ function GoalReminder({ profile }) {
 
   if (goals.length === 0) return null;
 
-  // Create a summary of goals
+  // Map goal IDs to friendly labels
   const goalLabels = {
     weightLoss: 'Lose body fat',
+    weight_loss: 'Lose body fat',
+    muscle_gain: 'Build muscle',
+    muscleGain: 'Build muscle',
     strength: 'Build strength',
     endurance: 'Improve endurance',
     sleep: 'Better sleep',
     nutrition: 'Better nutrition',
+    flexibility: 'Improve flexibility',
+    energy: 'More energy',
+    stress: 'Reduce stress',
+    general: 'Overall health',
   };
 
-  // Get first goal detail or fallback to label
-  const primaryGoal = goalDetails[goals[0]] || goalLabels[goals[0]] || goals[0];
-  const additionalGoals = goals.slice(1).map(g => goalLabels[g] || g);
+  // Get the primary goal - prefer the user's written detail over the label
+  const primaryGoalDetail = goalDetails[goals[0]];
+  const primaryGoalLabel = goalLabels[goals[0]] || goals[0].replace(/_/g, ' ');
+
+  // Format additional goals as labels only
+  const additionalGoalLabels = goals.slice(1).map(g => goalLabels[g] || g.replace(/_/g, ' '));
 
   return (
-    <div className="bg-indigo-50/70 border border-indigo-100 rounded-xl px-4 py-3 mb-4">
+    <div className="bg-gradient-to-r from-indigo-50 to-violet-50 border border-indigo-100 rounded-xl px-4 py-3 mb-4">
       <div className="flex items-start gap-3">
-        <Target size={16} className="text-indigo-500 mt-0.5 flex-shrink-0" />
+        <div className="p-1.5 bg-indigo-100 rounded-lg flex-shrink-0">
+          <Target size={14} className="text-indigo-600" />
+        </div>
         <div className="flex-1 min-w-0">
-          <p className="text-sm text-indigo-800">
-            <span className="font-medium">Working towards:</span>{' '}
-            <span className="text-indigo-700">
-              {primaryGoal.length > 60 ? primaryGoal.substring(0, 60) + '...' : primaryGoal}
-              {additionalGoals.length > 0 && (
-                <span className="text-indigo-500"> • {additionalGoals.join(' • ')}</span>
-              )}
-            </span>
-          </p>
+          <p className="text-xs font-medium text-indigo-500 uppercase tracking-wide mb-1">Working towards</p>
+          {primaryGoalDetail ? (
+            <p className="text-sm text-indigo-900 leading-snug">
+              {primaryGoalDetail.length > 80 ? primaryGoalDetail.substring(0, 80) + '...' : primaryGoalDetail}
+            </p>
+          ) : (
+            <p className="text-sm text-indigo-900">{primaryGoalLabel}</p>
+          )}
+          {additionalGoalLabels.length > 0 && (
+            <p className="text-xs text-indigo-500 mt-1">
+              Also: {additionalGoalLabels.join(' • ')}
+            </p>
+          )}
         </div>
         <button
           onClick={() => setDismissed(true)}
-          className="p-1 text-indigo-400 hover:text-indigo-600 hover:bg-indigo-100 rounded transition-colors flex-shrink-0"
-          title="Dismiss for today"
+          className="p-1 text-indigo-300 hover:text-indigo-600 hover:bg-indigo-100 rounded transition-colors flex-shrink-0"
+          title="Dismiss"
         >
           <X size={14} />
         </button>
@@ -152,9 +331,287 @@ function getWinIcon(iconName) {
   return icons[iconName] || Check;
 }
 
+/**
+ * Detect user intent from text
+ * Returns: 'question' | 'log' | 'unclear'
+ */
+function detectIntent(text) {
+  const lowerText = text.toLowerCase();
+
+  // QUESTION indicators - DO NOT auto-log
+  const questionIndicators = [
+    'should i', 'can i', 'would it', 'will it', 'is it',
+    'how do', 'how does', 'how should', 'how can',
+    'what should', 'what would', 'what if',
+    'do you think', 'does it matter',
+    'not sure', 'wondering', 'curious',
+    'advice', 'recommend', 'suggestion',
+    'before my', 'after my', // "before my yoga class" - asking about timing
+    'or will', 'or should', // "...or will that cause..."
+  ];
+
+  // LOG indicators - likely logging an activity
+  const logIndicators = [
+    'i did', 'i had', 'i ate', 'i ran', 'i went',
+    'just did', 'just had', 'just ate', 'just finished',
+    'completed', 'logged', 'tracking',
+    'for breakfast', 'for lunch', 'for dinner', 'for a snack',
+    'this morning', 'today i', 'yesterday i',
+    'weighed in', 'weighed myself', 'weight was', 'weight is',
+    'slept for', 'got hours', 'hours of sleep',
+  ];
+
+  const hasQuestionMark = lowerText.includes('?');
+  const isQuestion = questionIndicators.some(q => lowerText.includes(q)) || hasQuestionMark;
+  const isLog = logIndicators.some(l => lowerText.includes(l));
+
+  // If it's clearly a question and NOT a log, return question
+  if (isQuestion && !isLog) return 'question';
+  // If it's clearly a log and NOT a question, return log
+  if (isLog && !isQuestion) return 'log';
+  // If it has both indicators or neither, it's unclear
+  // But if it has a question mark, lean toward question
+  if (hasQuestionMark) return 'question';
+  return 'unclear';
+}
+
+// Detect activity type and log it
+function detectAndLogQuickEntry(text) {
+  const lower = text.toLowerCase();
+  const loggedWorkouts = [];
+
+  // First, detect user intent
+  const intent = detectIntent(text);
+
+  // If this is a question (not a log), don't auto-log anything
+  if (intent === 'question') {
+    return {
+      type: 'question',
+      icon: MessageCircle,
+      color: 'text-primary-600',
+      bgColor: 'bg-primary-50',
+      message: 'This looks like a question for your advisor',
+      destination: 'Chat with Advisor',
+      isQuestion: true,
+      originalText: text,
+    };
+  }
+
+  // Weight/weigh-in detection (exclusive - not combined with workouts)
+  if (lower.includes('weigh') || lower.includes('scale') || lower.includes('weight check') ||
+      (lower.match(/\d+(\.\d+)?\s*(lbs?|pounds?)/) && (lower.includes('at') || lower.includes('today')))) {
+    const weightMatch = text.match(/(\d+(?:\.\d+)?)\s*(?:lbs?|pounds?|kg|kilos?)?/i);
+    const weight = weightMatch ? parseFloat(weightMatch[1]) : null;
+    logActivity({
+      type: ACTIVITY_TYPES.WEIGHT,
+      source: ACTIVITY_SOURCES.DASHBOARD,
+      rawText: text,
+      summary: weight ? `Weighed in at ${weight} lbs` : 'Weight check',
+      data: { weight },
+    });
+    return {
+      type: 'weight',
+      icon: Scale,
+      color: 'text-gray-600',
+      bgColor: 'bg-gray-50',
+      message: weight ? `Weight logged: ${weight} lbs` : 'Weight check logged',
+      destination: 'Focus Goals',
+    };
+  }
+
+  // Sleep detection (exclusive)
+  if (lower.includes('slept') || lower.includes('sleep') || lower.includes('hours of rest')) {
+    const hoursMatch = text.match(/(\d+(?:\.\d+)?)\s*(?:hours?|hrs?)/i);
+    logActivity({
+      type: ACTIVITY_TYPES.SLEEP,
+      source: ACTIVITY_SOURCES.DASHBOARD,
+      rawText: text,
+      summary: hoursMatch ? `${hoursMatch[1]} hours of sleep` : 'Sleep logged',
+      data: { hours: hoursMatch ? parseFloat(hoursMatch[1]) : null },
+    });
+    return {
+      type: 'sleep',
+      icon: Moon,
+      color: 'text-purple-600',
+      bgColor: 'bg-purple-50',
+      message: hoursMatch ? `Sleep logged: ${hoursMatch[1]} hours` : 'Sleep logged',
+      destination: 'Focus Goals',
+    };
+  }
+
+  // Split text into segments for multi-workout detection
+  const segments = text.split(/\band\b|\bthen\b|,|;/i).map(s => s.trim()).filter(s => s.length > 0);
+
+  // Process each segment for workouts
+  for (const segment of segments) {
+    const segLower = segment.toLowerCase();
+
+    // Running detection
+    if (segLower.includes('ran') || segLower.includes('run ') || segLower.includes('running') ||
+        segLower.includes('jog') || (segLower.includes('mile') && !segLower.includes('walk'))) {
+      const distanceMatch = segment.match(/(\d+(?:\.\d+)?)\s*(?:miles?|mi)\b/i) ||
+                            text.match(/(\d+(?:\.\d+)?)\s*(?:miles?|mi)\b/i);
+      const paceMatch = segment.match(/(\d+:\d+)\s*(?:pace|\/mi|per mile)?/i) ||
+                        text.match(/(\d+:\d+)\s*(?:pace|\/mi|per mile)?/i);
+      const distance = distanceMatch ? parseFloat(distanceMatch[1]) : null;
+      const pace = paceMatch ? paceMatch[1] : null;
+
+      logActivity({
+        type: ACTIVITY_TYPES.WORKOUT,
+        subType: WORKOUT_TYPES.RUN,
+        source: ACTIVITY_SOURCES.DASHBOARD,
+        rawText: segment,
+        summary: distance ? `Ran ${distance} miles${pace ? ` @ ${pace}` : ''}` : 'Went for a run',
+        data: { distance, pace, exercise: 'Run' },
+      });
+      loggedWorkouts.push({ type: 'run', message: distance ? `${distance} mi run` : 'Run' });
+      continue;
+    }
+
+    // Strength/weightlifting detection
+    if (segLower.includes('lift') || segLower.includes('weights') || segLower.includes('gym') ||
+        segLower.includes('squat') || segLower.includes('bench') || segLower.includes('deadlift') ||
+        segLower.includes('circuit') || segLower.includes('pulldown') || segLower.includes('curl') ||
+        segLower.includes('row') || segLower.includes('press') || segLower.includes('pull-up') ||
+        segLower.includes('pullup') || segLower.includes('dumbbell') || segLower.includes('barbell') ||
+        segLower.includes('kettlebell') || segLower.includes('strength')) {
+
+      const durationMatch = segment.match(/(\d+)\s*(?:min|mins|minutes?)\b/i);
+      const duration = durationMatch ? parseInt(durationMatch[1]) : null;
+
+      let exerciseName = 'Strength training';
+      if (segLower.includes('back')) exerciseName = 'Back workout';
+      else if (segLower.includes('chest')) exerciseName = 'Chest workout';
+      else if (segLower.includes('leg')) exerciseName = 'Leg workout';
+      else if (segLower.includes('arm') || segLower.includes('bicep') || segLower.includes('tricep')) exerciseName = 'Arm workout';
+      else if (segLower.includes('shoulder')) exerciseName = 'Shoulder workout';
+      else if (segLower.includes('circuit')) exerciseName = 'Circuit training';
+
+      logActivity({
+        type: ACTIVITY_TYPES.WORKOUT,
+        subType: WORKOUT_TYPES.STRENGTH,
+        source: ACTIVITY_SOURCES.DASHBOARD,
+        rawText: segment,
+        summary: duration ? `${exerciseName} (${duration} min)` : exerciseName,
+        data: { duration, exercise: exerciseName },
+      });
+      loggedWorkouts.push({ type: 'strength', message: duration ? `${exerciseName} (${duration}m)` : exerciseName });
+      continue;
+    }
+
+    // Yoga detection
+    if (segLower.includes('yoga') || segLower.includes('stretch')) {
+      const durationMatch = segment.match(/(\d+)\s*(?:min|mins|minutes?)\b/i);
+      const duration = durationMatch ? parseInt(durationMatch[1]) : null;
+
+      logActivity({
+        type: ACTIVITY_TYPES.WORKOUT,
+        subType: WORKOUT_TYPES.YOGA,
+        source: ACTIVITY_SOURCES.DASHBOARD,
+        rawText: segment,
+        summary: duration ? `Yoga (${duration} min)` : 'Yoga session',
+        data: { duration, exercise: 'Yoga' },
+      });
+      loggedWorkouts.push({ type: 'yoga', message: duration ? `Yoga (${duration}m)` : 'Yoga' });
+      continue;
+    }
+
+    // Walking detection
+    if (segLower.includes('walk') || segLower.includes('steps') || segLower.includes('stroll')) {
+      const distanceMatch = segment.match(/(\d+(?:\.\d+)?)\s*(?:miles?|mi|km|k)\b/i);
+      const stepsMatch = segment.match(/(\d{3,})\s*steps?/i);
+
+      logActivity({
+        type: ACTIVITY_TYPES.WORKOUT,
+        subType: WORKOUT_TYPES.WALK,
+        source: ACTIVITY_SOURCES.DASHBOARD,
+        rawText: segment,
+        summary: distanceMatch ? `Walked ${distanceMatch[1]} miles` : stepsMatch ? `${stepsMatch[1]} steps` : 'Walk',
+        data: {
+          distance: distanceMatch ? parseFloat(distanceMatch[1]) : null,
+          steps: stepsMatch ? parseInt(stepsMatch[1]) : null,
+          exercise: 'Walk',
+        },
+      });
+      loggedWorkouts.push({ type: 'walk', message: distanceMatch ? `${distanceMatch[1]} mi walk` : stepsMatch ? `${stepsMatch[1]} steps` : 'Walk' });
+      continue;
+    }
+
+    // General workout detection
+    if (segLower.includes('workout') || segLower.includes('exercise') ||
+        segLower.includes('cardio') || segLower.includes('hiit')) {
+      const durationMatch = segment.match(/(\d+)\s*(?:min|mins|minutes?)\b/i);
+      const duration = durationMatch ? parseInt(durationMatch[1]) : null;
+
+      logActivity({
+        type: ACTIVITY_TYPES.WORKOUT,
+        subType: WORKOUT_TYPES.OTHER,
+        source: ACTIVITY_SOURCES.DASHBOARD,
+        rawText: segment,
+        summary: duration ? `Workout (${duration} min)` : 'Workout',
+        data: { duration, exercise: 'Workout' },
+      });
+      loggedWorkouts.push({ type: 'other', message: duration ? `Workout (${duration}m)` : 'Workout' });
+      continue;
+    }
+  }
+
+  // If we logged workouts, return combined confirmation
+  if (loggedWorkouts.length > 0) {
+    const messages = loggedWorkouts.map(w => w.message);
+    return {
+      type: 'workout',
+      icon: loggedWorkouts.length > 1 ? Dumbbell : (loggedWorkouts[0].type === 'run' ? Footprints : Dumbbell),
+      color: 'text-blue-600',
+      bgColor: 'bg-blue-50',
+      message: loggedWorkouts.length > 1 ? `Logged: ${messages.join(' + ')}` : `Logged: ${messages[0]}`,
+      destination: 'Training & Focus Goals',
+    };
+  }
+
+  // Nutrition/meal detection (default for food-related)
+  if (lower.includes('ate') || lower.includes('had') || lower.includes('breakfast') ||
+      lower.includes('lunch') || lower.includes('dinner') || lower.includes('snack') ||
+      lower.includes('meal') || lower.includes('eggs') || lower.includes('salad') ||
+      lower.includes('smoothie') || lower.includes('coffee')) {
+    logActivity({
+      type: ACTIVITY_TYPES.NUTRITION,
+      source: ACTIVITY_SOURCES.DASHBOARD,
+      rawText: text,
+      summary: text.length > 50 ? text.substring(0, 50) + '...' : text,
+    });
+    return {
+      type: 'nutrition',
+      icon: Utensils,
+      color: 'text-amber-600',
+      bgColor: 'bg-amber-50',
+      message: 'Meal logged',
+      destination: 'Nutrition',
+    };
+  }
+
+  // Default - general activity
+  logActivity({
+    type: ACTIVITY_TYPES.GENERAL,
+    source: ACTIVITY_SOURCES.DASHBOARD,
+    rawText: text,
+    summary: text.length > 50 ? text.substring(0, 50) + '...' : text,
+  });
+  return {
+    type: 'general',
+    icon: CheckCircle,
+    color: 'text-gray-600',
+    bgColor: 'bg-gray-50',
+    message: 'Entry logged',
+    destination: 'Activity Log',
+  };
+}
+
 // Quick Entry Component
-function QuickEntryBox({ onSubmit, isLoading }) {
+function QuickEntryBox({ onSubmit, onNavigate, onActivityLogged }) {
   const [input, setInput] = useState('');
+  const [confirmation, setConfirmation] = useState(null);
+  const [clarifyingQuestion, setClarifyingQuestion] = useState(null);
   const textareaRef = useRef(null);
 
   const tips = [
@@ -173,11 +630,56 @@ function QuickEntryBox({ onSubmit, isLoading }) {
     }
   }, [input]);
 
+  // Auto-dismiss confirmation after 5 seconds
+  useEffect(() => {
+    if (confirmation && !confirmation.isQuestion) {
+      const timer = setTimeout(() => setConfirmation(null), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [confirmation]);
+
   function handleSubmit(e) {
     e.preventDefault();
-    if (!input.trim() || isLoading) return;
-    onSubmit(input.trim());
+    if (!input.trim()) return;
+
+    const trimmedInput = input.trim();
+
+    // Detect, log, and get confirmation info
+    const result = detectAndLogQuickEntry(trimmedInput);
+
+    // If it's a question, send directly to advisor
+    if (result.isQuestion) {
+      onSubmit(trimmedInput, true); // true = is question, create new chat
+      setInput('');
+      return;
+    }
+
+    // Check if we need clarification for ambiguous entries
+    const intent = detectIntent(trimmedInput);
+    if (intent === 'unclear') {
+      // Check if text mentions an activity we might want to log
+      const lower = trimmedInput.toLowerCase();
+      const activityMentions = ['yoga', 'run', 'workout', 'gym', 'lift', 'walk', 'exercise'];
+      const mentionedActivity = activityMentions.find(a => lower.includes(a));
+
+      if (mentionedActivity) {
+        setClarifyingQuestion({
+          originalText: trimmedInput,
+          activity: mentionedActivity,
+          message: `I noticed you mentioned "${mentionedActivity}" - did you want me to log that as a workout?`,
+        });
+        setInput('');
+        return;
+      }
+    }
+
+    setConfirmation({ ...result, originalText: trimmedInput });
     setInput('');
+
+    // Notify parent that activity was logged
+    if (!result.isQuestion) {
+      onActivityLogged?.();
+    }
   }
 
   function handleKeyDown(e) {
@@ -188,8 +690,105 @@ function QuickEntryBox({ onSubmit, isLoading }) {
     }
   }
 
+  function handleChatWithAdvisor() {
+    if (confirmation) {
+      onSubmit(confirmation.originalText, confirmation.isQuestion);
+      setConfirmation(null);
+    }
+  }
+
+  function handleDismiss() {
+    setConfirmation(null);
+    setClarifyingQuestion(null);
+  }
+
+  // Handle clarifying question response
+  function handleClarifyYes() {
+    if (clarifyingQuestion) {
+      // Log the activity
+      const result = detectAndLogQuickEntry(clarifyingQuestion.originalText);
+      setConfirmation({ ...result, originalText: clarifyingQuestion.originalText });
+      setClarifyingQuestion(null);
+      onActivityLogged?.();
+    }
+  }
+
+  function handleClarifyNo() {
+    if (clarifyingQuestion) {
+      // Send to advisor as a question
+      onSubmit(clarifyingQuestion.originalText, true);
+      setClarifyingQuestion(null);
+    }
+  }
+
   return (
     <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-4">
+      {/* Clarifying Question */}
+      {clarifyingQuestion && (
+        <div className="mb-3 p-4 rounded-xl bg-blue-50 border border-blue-200">
+          <div className="flex items-start gap-3">
+            <div className="p-1.5 bg-blue-100 rounded-lg flex-shrink-0">
+              <MessageCircle size={16} className="text-blue-600" />
+            </div>
+            <div className="flex-1">
+              <p className="text-sm font-medium text-gray-800 mb-3">
+                {clarifyingQuestion.message}
+              </p>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleClarifyYes}
+                  className="px-4 py-2 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  Yes, log it
+                </button>
+                <button
+                  onClick={handleClarifyNo}
+                  className="px-4 py-2 text-sm font-medium bg-white text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  No, just asking
+                </button>
+                <button
+                  onClick={handleDismiss}
+                  className="p-2 text-gray-400 hover:text-gray-600 transition-colors ml-auto"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmation message */}
+      {confirmation && !clarifyingQuestion && (
+        <div className={`mb-3 p-3 rounded-xl ${confirmation.bgColor} border border-opacity-50 flex items-center justify-between`}>
+          <div className="flex items-center gap-2">
+            <confirmation.icon size={18} className={confirmation.color} />
+            <span className="text-sm font-medium text-gray-700">
+              {confirmation.message}
+            </span>
+            <span className="text-xs text-gray-500">
+              → {confirmation.destination}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleChatWithAdvisor}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-primary-700 bg-white rounded-lg border border-primary-200 hover:bg-primary-50 transition-colors"
+            >
+              <MessageCircle size={14} />
+              Chat with Advisor
+            </button>
+            <button
+              onClick={handleDismiss}
+              className="p-1 text-gray-400 hover:text-gray-600 transition-colors"
+            >
+              <X size={16} />
+            </button>
+          </div>
+        </div>
+      )}
+
       <form onSubmit={handleSubmit}>
         <div className="flex items-end gap-3">
           <textarea
@@ -197,22 +796,17 @@ function QuickEntryBox({ onSubmit, isLoading }) {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Log a meal, workout, or anything..."
+            placeholder="Log a meal, workout, or ask your advisor anything..."
             className="flex-1 px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none overflow-hidden"
             style={{ minHeight: '48px' }}
             rows={1}
-            disabled={isLoading}
           />
           <button
             type="submit"
-            disabled={!input.trim() || isLoading}
+            disabled={!input.trim()}
             className="p-3 bg-primary-600 text-white rounded-xl hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex-shrink-0"
           >
-            {isLoading ? (
-              <Loader2 size={20} className="animate-spin" />
-            ) : (
-              <Send size={20} />
-            )}
+            <Send size={20} />
           </button>
         </div>
       </form>
@@ -228,13 +822,25 @@ function QuickEntryBox({ onSubmit, isLoading }) {
 function DraggableMealSlot({ meal, dayKey, index, onUpdate, onDragStart, onDragOver, onDragEnd, onDelete, isDragging, canDelete }) {
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState(meal.content || '');
-  const inputRef = useRef(null);
+  const [showCalories, setShowCalories] = useState(false);
+  const textareaRef = useRef(null);
 
   useEffect(() => {
-    if (isEditing && inputRef.current) {
-      inputRef.current.focus();
+    if (isEditing && textareaRef.current) {
+      textareaRef.current.focus();
+      // Auto-resize textarea
+      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = textareaRef.current.scrollHeight + 'px';
     }
   }, [isEditing]);
+
+  // Auto-resize on content change
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 150) + 'px';
+    }
+  }, [editValue]);
 
   function handleSave() {
     onUpdate(dayKey, meal.id, editValue);
@@ -242,7 +848,8 @@ function DraggableMealSlot({ meal, dayKey, index, onUpdate, onDragStart, onDragO
   }
 
   function handleKeyDown(e) {
-    if (e.key === 'Enter') {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
       handleSave();
     } else if (e.key === 'Escape') {
       setEditValue(meal.content || '');
@@ -251,38 +858,44 @@ function DraggableMealSlot({ meal, dayKey, index, onUpdate, onDragStart, onDragO
   }
 
   const hasMeal = meal.content?.trim();
+  const calorieEstimate = hasMeal ? estimateCalories(meal.content) : null;
+  const hasCalories = calorieEstimate && calorieEstimate.totalCalories > 0;
 
   if (isEditing) {
     return (
-      <div className="flex items-center gap-2 p-2 rounded-lg bg-white border-2 border-amber-400">
-        <span className="text-sm text-gray-600 font-medium w-24 flex-shrink-0">
-          {meal.label}:
-        </span>
-        <input
-          ref={inputRef}
-          type="text"
-          value={editValue}
-          onChange={(e) => setEditValue(e.target.value)}
-          onKeyDown={handleKeyDown}
-          onBlur={handleSave}
-          placeholder="What did you have?"
-          className="flex-1 px-2 py-1 text-sm bg-transparent border-none focus:outline-none"
-        />
-        <button
-          onClick={handleSave}
-          className="p-1 text-green-600 hover:bg-green-50 rounded"
-        >
-          <Check size={14} />
-        </button>
-        <button
-          onClick={() => {
-            setEditValue(meal.content || '');
-            setIsEditing(false);
-          }}
-          className="p-1 text-gray-400 hover:bg-gray-100 rounded"
-        >
-          <X size={14} />
-        </button>
+      <div className="p-2 rounded-lg bg-white border-2 border-amber-400">
+        <div className="flex items-start gap-2 mb-2">
+          <span className="text-sm text-gray-600 font-medium w-24 flex-shrink-0 pt-1">
+            {meal.label}:
+          </span>
+          <textarea
+            ref={textareaRef}
+            value={editValue}
+            onChange={(e) => setEditValue(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="What did you have? Be specific for better tracking..."
+            className="flex-1 px-2 py-1 text-sm bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400 focus:border-transparent resize-none overflow-hidden"
+            style={{ minHeight: '36px' }}
+            rows={1}
+          />
+        </div>
+        <div className="flex justify-end gap-2">
+          <button
+            onClick={() => {
+              setEditValue(meal.content || '');
+              setIsEditing(false);
+            }}
+            className="px-3 py-1 text-sm text-gray-500 hover:bg-gray-100 rounded"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            className="px-3 py-1 text-sm bg-amber-500 text-white rounded hover:bg-amber-600"
+          >
+            Save
+          </button>
+        </div>
       </div>
     );
   }
@@ -302,15 +915,15 @@ function DraggableMealSlot({ meal, dayKey, index, onUpdate, onDragStart, onDragO
       }`}
     >
       {/* Drag Handle */}
-      <div className="text-gray-400 cursor-grab active:cursor-grabbing flex-shrink-0">
+      <div className="text-gray-400 cursor-grab active:cursor-grabbing flex-shrink-0 mt-0.5">
         <GripVertical size={14} />
       </div>
 
       {/* Checkbox */}
       {hasMeal ? (
-        <Check size={14} className="text-green-600 flex-shrink-0" />
+        <Check size={14} className="text-green-600 flex-shrink-0 mt-0.5" />
       ) : (
-        <div className="w-3.5 h-3.5 rounded-full border-2 border-gray-300 flex-shrink-0" />
+        <div className="w-3.5 h-3.5 rounded-full border-2 border-gray-300 flex-shrink-0 mt-0.5" />
       )}
 
       {/* Content - Click to edit */}
@@ -318,7 +931,7 @@ function DraggableMealSlot({ meal, dayKey, index, onUpdate, onDragStart, onDragO
         onClick={() => setIsEditing(true)}
         className="flex-1 flex items-start gap-2 text-left min-w-0"
       >
-        <span className="text-sm text-gray-600 font-medium w-24 flex-shrink-0 pt-0.5">
+        <span className="text-sm text-gray-600 font-medium w-24 flex-shrink-0">
           {meal.label}:
         </span>
         <span className={`text-sm flex-1 ${
@@ -326,22 +939,267 @@ function DraggableMealSlot({ meal, dayKey, index, onUpdate, onDragStart, onDragO
         }`}>
           {hasMeal ? meal.content : 'Tap to add'}
         </span>
-        {hasMeal && (
-          <Edit2 size={12} className="text-gray-400 flex-shrink-0 mt-1" />
-        )}
       </button>
 
-      {/* Delete button (only if canDelete) */}
-      {canDelete && (
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onDelete(dayKey, meal.id);
-          }}
-          className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded flex-shrink-0"
-        >
-          <Trash2 size={12} />
-        </button>
+      {/* Action buttons */}
+      <div className="flex items-center gap-1 flex-shrink-0">
+        {/* Calorie estimate icon */}
+        {hasCalories && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowCalories(true);
+            }}
+            className="p-1 text-orange-500 hover:bg-orange-50 rounded transition-colors"
+            title={`~${calorieEstimate.totalCalories} cal`}
+          >
+            <Flame size={12} />
+          </button>
+        )}
+
+        {/* Edit icon */}
+        {hasMeal && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsEditing(true);
+            }}
+            className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors"
+          >
+            <Edit2 size={12} />
+          </button>
+        )}
+
+        {/* Delete button */}
+        {canDelete && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete(dayKey, meal.id);
+            }}
+            className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors"
+          >
+            <Trash2 size={12} />
+          </button>
+        )}
+      </div>
+
+      {/* Calorie Popup */}
+      {showCalories && calorieEstimate && (
+        <CaloriePopup
+          estimate={calorieEstimate}
+          onClose={() => setShowCalories(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+// Source Detail Sub-Popup
+function SourceDetailPopup({ item, onClose }) {
+  const [copied, setCopied] = useState(false);
+  const sourceUrl = item.sourceUrl || SOURCE_URLS[item.source] || null;
+
+  function handleCopyLink() {
+    if (sourceUrl) {
+      navigator.clipboard.writeText(sourceUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-4 animate-scale-in select-text"
+        onClick={(e) => e.stopPropagation()}
+        style={{ userSelect: 'text' }}
+      >
+        <div className="flex items-center justify-between mb-3">
+          <h4 className="font-semibold text-gray-900 text-sm">{item.food} - Calorie Source</h4>
+          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg">
+            <X size={16} className="text-gray-500" />
+          </button>
+        </div>
+
+        <div className="space-y-3">
+          {/* Calorie info */}
+          <div className="p-3 bg-orange-50 rounded-lg">
+            <p className="text-sm text-gray-800 font-medium">
+              ~{item.calories} calories
+            </p>
+            <p className="text-xs text-gray-600 mt-1">
+              {item.baseServing}
+            </p>
+          </div>
+
+          {/* Calculation */}
+          <div className="text-xs text-gray-600">
+            <span className="text-gray-400">Calculation: </span>
+            <span>{item.calculation}</span>
+          </div>
+
+          {/* Source */}
+          <div className="p-3 bg-blue-50 rounded-lg">
+            <p className="text-xs text-gray-500 mb-1">Source</p>
+            <p className="text-sm font-medium text-blue-700">{item.source}</p>
+            {sourceUrl && (
+              <p className="text-xs text-blue-600 mt-1 break-all">{sourceUrl}</p>
+            )}
+          </div>
+
+          {/* Action buttons */}
+          <div className="flex gap-2 pt-2">
+            {sourceUrl && (
+              <button
+                onClick={handleCopyLink}
+                className="flex-1 px-3 py-2 text-xs font-medium bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors flex items-center justify-center gap-1"
+              >
+                {copied ? (
+                  <>
+                    <Check size={12} /> Copied!
+                  </>
+                ) : (
+                  'Copy Link'
+                )}
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="flex-1 px-3 py-2 text-xs font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Calorie Popup Component - Shows calorie breakdown for a meal entry
+function CaloriePopup({ estimate, onClose }) {
+  const [selectedItem, setSelectedItem] = useState(null);
+
+  if (!estimate) return null;
+
+  const confidenceLabels = {
+    low: { text: 'Low confidence', color: 'text-amber-600 bg-amber-50' },
+    medium: { text: 'Medium confidence', color: 'text-blue-600 bg-blue-50' },
+    high: { text: 'High confidence', color: 'text-green-600 bg-green-50' },
+  };
+  const confidence = confidenceLabels[estimate.confidence] || confidenceLabels.low;
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center" onClick={onClose}>
+      <div
+        className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full sm:max-w-md max-h-[85vh] overflow-hidden animate-slide-up sm:animate-scale-in select-text"
+        onClick={(e) => e.stopPropagation()}
+        style={{ userSelect: 'text' }}
+      >
+        {/* Header - sticky */}
+        <div className="sticky top-0 bg-white border-b border-gray-100 px-4 py-3 sm:px-5 sm:py-4 z-10">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <div className="p-1.5 sm:p-2 bg-orange-100 rounded-lg">
+                <Flame size={18} className="text-orange-500" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-gray-900 text-sm sm:text-base">Calorie Estimate</h3>
+                <span className={`text-xs px-1.5 py-0.5 rounded ${confidence.color}`}>
+                  {confidence.text}
+                </span>
+              </div>
+            </div>
+            <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg -mr-1">
+              <X size={20} className="text-gray-500" />
+            </button>
+          </div>
+        </div>
+
+        {/* Scrollable content */}
+        <div className="overflow-y-auto max-h-[calc(85vh-120px)] px-4 py-4 sm:px-5">
+          {/* Total */}
+          <div className="text-center mb-5 pb-4 border-b border-gray-100">
+            <p className="text-4xl sm:text-5xl font-bold text-orange-600">{estimate.totalCalories}</p>
+            <p className="text-sm text-gray-500 mt-1">estimated calories</p>
+          </div>
+
+          {/* Line-item breakdown */}
+          {estimate.items && estimate.items.length > 0 && (
+            <div className="space-y-3">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                Breakdown ({estimate.items.length} item{estimate.items.length !== 1 ? 's' : ''})
+              </p>
+
+              {estimate.items.map((item, idx) => (
+                <div key={idx} className="bg-gray-50 rounded-xl p-3 space-y-2">
+                  {/* Food name and calories */}
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="text-sm font-medium text-gray-900">{item.food}</span>
+                    <span className="text-sm font-bold text-orange-600 whitespace-nowrap">{item.calories} cal</span>
+                  </div>
+
+                  {/* Calculation detail */}
+                  <div className="text-xs text-gray-500 space-y-0.5">
+                    <p className="flex items-center gap-1">
+                      <span className="text-gray-400">Calc:</span>
+                      <span>{item.calculation}</span>
+                    </p>
+                    {item.source && (
+                      <p className="flex items-center gap-1">
+                        <span className="text-gray-400">Source:</span>
+                        <button
+                          onClick={() => setSelectedItem(item)}
+                          className="text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1"
+                        >
+                          {item.source}
+                          <Info size={10} />
+                        </button>
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* No items detected */}
+          {(!estimate.items || estimate.items.length === 0) && (
+            <div className="text-center py-4">
+              <p className="text-sm text-gray-500">No specific foods detected</p>
+              <p className="text-xs text-gray-400 mt-1">Try being more specific with food names</p>
+            </div>
+          )}
+
+          {/* Tips */}
+          {estimate.tips && estimate.tips.length > 0 && (
+            <div className="mt-4 p-3 bg-amber-50 rounded-xl">
+              <p className="text-xs font-medium text-amber-700 mb-1">💡 Tip</p>
+              {estimate.tips.map((tip, idx) => (
+                <p key={idx} className="text-xs text-amber-600">{tip}</p>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Footer - sticky */}
+        <div className="sticky bottom-0 bg-white border-t border-gray-100 px-4 py-3 sm:px-5 sm:py-4">
+          <p className="text-xs text-gray-400 text-center">
+            Estimates based on USDA FoodData Central & manufacturer labels
+          </p>
+        </div>
+      </div>
+
+      {/* Source Detail Sub-Popup */}
+      {selectedItem && (
+        <SourceDetailPopup
+          item={selectedItem}
+          onClose={() => setSelectedItem(null)}
+        />
       )}
     </div>
   );
@@ -391,13 +1249,179 @@ function InfoTooltip({ isOpen, onClose }) {
   );
 }
 
+/**
+ * Smart Suggestions Popup - Shows meal/snack ideas based on remaining calories
+ */
+function SmartSuggestionsPopup({ remainingCalories, profile, onClose }) {
+  const restrictions = profile?.restrictions?.toLowerCase() || '';
+  const isVegetarian = restrictions.includes('vegetarian') || restrictions.includes('vegan');
+  const isDairyFree = restrictions.includes('dairy') || restrictions.includes('lactose');
+
+  const filterSuggestions = (items) => {
+    return items.filter(item => {
+      if (isVegetarian && item.hasMeat) return false;
+      if (isDairyFree && item.hasDairy) return false;
+      return true;
+    });
+  };
+
+  const dinnerSuggestions = filterSuggestions([
+    { text: 'Grilled chicken breast with roasted vegetables', cal: '~500 cal', hasMeat: true },
+    { text: 'Salmon with quinoa and steamed broccoli', cal: '~550 cal', hasMeat: true },
+    { text: 'Turkey stir-fry with brown rice', cal: '~480 cal', hasMeat: true },
+    { text: 'Tofu and vegetable curry with rice', cal: '~520 cal' },
+    { text: 'Pasta primavera with olive oil', cal: '~550 cal' },
+    { text: 'Bean and vegetable burrito bowl', cal: '~500 cal' },
+  ]);
+
+  const snackSuggestions = filterSuggestions([
+    { text: 'Greek yogurt with berries', cal: '~150 cal', hasDairy: true },
+    { text: 'Apple with 2 tbsp almond butter', cal: '~250 cal' },
+    { text: 'Handful of almonds (~23 nuts)', cal: '~165 cal' },
+    { text: 'Protein shake', cal: '~120 cal' },
+    { text: 'Cottage cheese with fruit', cal: '~180 cal', hasDairy: true },
+    { text: 'Hummus with veggie sticks', cal: '~150 cal' },
+  ]);
+
+  const lightSnackSuggestions = filterSuggestions([
+    { text: 'Small apple', cal: '~80 cal' },
+    { text: 'Cup of berries', cal: '~85 cal' },
+    { text: 'String cheese', cal: '~80 cal', hasDairy: true },
+    { text: 'Hard boiled egg', cal: '~78 cal' },
+    { text: 'Small handful of almonds (10-12)', cal: '~80 cal' },
+    { text: 'Celery with 1 tbsp peanut butter', cal: '~100 cal' },
+  ]);
+
+  let content, title, tipText;
+
+  if (remainingCalories > 500) {
+    title = `You have ~${remainingCalories.toLocaleString()} calories remaining today`;
+    tipText = "You could have a solid dinner AND a snack and still stay under your target!";
+    content = (
+      <>
+        <div className="mb-4">
+          <p className="text-sm font-medium text-gray-700 mb-2">Dinner ideas (~500-600 cal):</p>
+          <ul className="space-y-1.5">
+            {dinnerSuggestions.slice(0, 3).map((item, i) => (
+              <li key={i} className="text-sm text-gray-600 flex justify-between">
+                <span>• {item.text}</span>
+                <span className="text-gray-400 ml-2">{item.cal}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div>
+          <p className="text-sm font-medium text-gray-700 mb-2">Snack ideas (~150-250 cal):</p>
+          <ul className="space-y-1.5">
+            {snackSuggestions.slice(0, 4).map((item, i) => (
+              <li key={i} className="text-sm text-gray-600 flex justify-between">
+                <span>• {item.text}</span>
+                <span className="text-gray-400 ml-2">{item.cal}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </>
+    );
+  } else if (remainingCalories > 200) {
+    title = `You have ~${remainingCalories.toLocaleString()} calories remaining today`;
+    tipText = "A satisfying snack would fit perfectly!";
+    content = (
+      <div>
+        <p className="text-sm font-medium text-gray-700 mb-2">Snack ideas that fit your budget:</p>
+        <ul className="space-y-1.5">
+          {snackSuggestions.map((item, i) => (
+            <li key={i} className="text-sm text-gray-600 flex justify-between">
+              <span>• {item.text}</span>
+              <span className="text-gray-400 ml-2">{item.cal}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    );
+  } else if (remainingCalories > 0) {
+    title = "You're almost at your target for today!";
+    tipText = "Going slightly over occasionally is totally fine! Consistency over perfection.";
+    content = (
+      <div>
+        <p className="text-sm text-gray-600 mb-3">You have ~{remainingCalories} calories remaining.</p>
+        <p className="text-sm font-medium text-gray-700 mb-2">If you're still hungry, consider:</p>
+        <ul className="space-y-1.5">
+          {lightSnackSuggestions.slice(0, 4).map((item, i) => (
+            <li key={i} className="text-sm text-gray-600 flex justify-between">
+              <span>• {item.text}</span>
+              <span className="text-gray-400 ml-2">{item.cal}</span>
+            </li>
+          ))}
+          <li className="text-sm text-gray-600">• Raw veggies (cucumber, celery, peppers)</li>
+        </ul>
+      </div>
+    );
+  } else {
+    const overAmount = Math.abs(remainingCalories);
+    title = `You're ~${overAmount.toLocaleString()} calories over your target today`;
+    tipText = "Remember: It's about the weekly average, not perfection every single day.";
+    content = (
+      <div>
+        <p className="text-sm text-gray-600 mb-4">No worries! One day doesn't define your progress.</p>
+        <p className="text-sm font-medium text-gray-700 mb-2">Options:</p>
+        <ul className="space-y-2 text-sm text-gray-600">
+          <li>• <strong>Call it a day</strong> - tomorrow is a fresh start</li>
+          <li>• <strong>Add some extra activity</strong> - a 30-min walk burns ~150 cal</li>
+          <li>• <strong>Slightly reduce tomorrow's intake</strong> to balance out</li>
+        </ul>
+      </div>
+    );
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center" onClick={onClose}>
+      <div
+        className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full sm:max-w-md max-h-[85vh] overflow-hidden animate-slide-up sm:animate-scale-in"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="sticky top-0 bg-white border-b border-gray-100 px-4 py-3 z-10">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-green-100 rounded-lg">
+                <Target size={18} className="text-green-600" />
+              </div>
+              <h3 className="font-semibold text-gray-900 text-sm">Smart Suggestions</h3>
+            </div>
+            <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg -mr-1">
+              <X size={20} className="text-gray-500" />
+            </button>
+          </div>
+        </div>
+
+        <div className="overflow-y-auto max-h-[calc(85vh-140px)] px-4 py-4">
+          <p className="font-medium text-gray-900 mb-4">{title}</p>
+          {content}
+          <div className="mt-4 p-3 bg-amber-50 rounded-xl">
+            <div className="flex gap-2">
+              <Sparkles size={16} className="text-amber-600 flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-amber-800">{tipText}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="sticky bottom-0 bg-white border-t border-gray-100 px-4 py-3">
+          <p className="text-xs text-gray-400 text-center">These are estimates. Actual calories may vary.</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Nutrition Calibration Section for Home (Toned down version)
 function NutritionCalibrationCard() {
   const [calibrationData, setCalibrationData] = useState(null);
   const [showPreviousDays, setShowPreviousDays] = useState(false);
   const [dragIndex, setDragIndex] = useState(null);
   const [showAddMeal, setShowAddMeal] = useState(false);
+  const [showSuggestions, setShowSuggestions] = useState(false);
   const todayKey = getTodayDayKey();
+  const profile = getProfile();
 
   useEffect(() => {
     setCalibrationData(getCalibrationData());
@@ -489,6 +1513,72 @@ function NutritionCalibrationCard() {
         />
       </div>
 
+      {/* FEATURE 1: Calorie Progress Section */}
+      {todayData && meals.length > 0 && (() => {
+        const consumedCalories = getTodaysCaloriesFromMeals(meals);
+        const targetCalories = calculateDailyCalorieBudget(profile);
+        const remainingCalories = targetCalories - consumedCalories;
+        const percentUsed = Math.min(100, Math.round((consumedCalories / targetCalories) * 100));
+        const isOver = remainingCalories < 0;
+        const isApproaching = percentUsed >= 80 && !isOver;
+
+        return (
+          <div className="bg-white rounded-xl border border-gray-200 p-3 mb-4">
+            <div className="flex items-center justify-between text-xs text-gray-500 uppercase tracking-wide mb-2">
+              <span className="font-semibold">Today's Calories</span>
+            </div>
+
+            <div className="flex items-baseline justify-between mb-2">
+              <div className="flex items-baseline gap-1">
+                <span className="text-xl font-bold text-gray-900">{consumedCalories.toLocaleString()}</span>
+                <span className="text-gray-400">/</span>
+                <span className="text-gray-500">{targetCalories.toLocaleString()} cal</span>
+              </div>
+
+              <button
+                onClick={() => setShowSuggestions(true)}
+                className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium transition-colors ${
+                  isOver ? 'text-red-600 hover:bg-red-50' :
+                  isApproaching ? 'text-amber-600 hover:bg-amber-50' :
+                  'text-green-600 hover:bg-green-50'
+                }`}
+              >
+                {remainingCalories >= 0 ? (
+                  <>{remainingCalories.toLocaleString()} remaining</>
+                ) : (
+                  <>{Math.abs(remainingCalories).toLocaleString()} over</>
+                )}
+                <Info size={12} />
+              </button>
+            </div>
+
+            <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all duration-500 ${
+                  isOver ? 'bg-red-500' :
+                  isApproaching ? 'bg-amber-500' :
+                  'bg-green-500'
+                }`}
+                style={{ width: `${Math.min(percentUsed, 100)}%` }}
+              />
+            </div>
+
+            <div className="flex justify-between mt-1.5">
+              <span className="text-xs text-gray-400">{percentUsed}% of daily target</span>
+              {consumedCalories > 0 && !isOver && !isApproaching && (
+                <span className="text-xs text-green-600">On track</span>
+              )}
+              {isApproaching && (
+                <span className="text-xs text-amber-600">Approaching target</span>
+              )}
+              {isOver && (
+                <span className="text-xs text-red-600">Over target</span>
+              )}
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Today's Meals - Toned down date header */}
       {todayData && !todayData.completed && (
         <div className="mb-4">
@@ -555,67 +1645,130 @@ function NutritionCalibrationCard() {
         </div>
       )}
 
-      {/* View completed days */}
-      {completedDays.length > 0 && (
-        <>
-          <button
-            onClick={() => setShowPreviousDays(!showPreviousDays)}
-            className="text-sm text-amber-700 hover:text-amber-800 flex items-center gap-1"
-          >
-            View completed days ({completedDays.length})
+      {/* FEATURE 3: Combined Day Progress + Completed Days Dropdown */}
+      <div className="mt-4 pt-3 border-t border-amber-200">
+        {/* Encouraging message with dropdown toggle */}
+        <button
+          onClick={() => setShowPreviousDays(!showPreviousDays)}
+          className="w-full flex items-center justify-between p-2 rounded-lg hover:bg-amber-100/50 transition-colors"
+        >
+          <div className="flex items-center gap-2">
+            <span className="text-base">
+              {progress.remaining === 0 ? '🎉' :
+               progress.completed === 0 ? '🚀' :
+               progress.completed === 1 ? '🌱' :
+               progress.completed === 2 ? '💪' :
+               progress.completed === 3 ? '⭐' : '🔥'}
+            </span>
+            <span className="text-sm font-medium text-amber-800">
+              Day {progress.completed + (todayData && !todayData.completed ? 1 : 0)} of 5
+              {progress.completed > 0 && progress.remaining > 0 && " - Keep it up!"}
+            </span>
+          </div>
+          <div className="flex items-center gap-2 text-amber-600">
+            <span className="text-xs">View completed days</span>
             {showPreviousDays ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-          </button>
+          </div>
+        </button>
 
-          {/* Previous Days List - Less Emphasized */}
-          {showPreviousDays && (
-            <div className="mt-3 space-y-3">
-              {completedDays.map(day => {
-                const dayData = calibrationData.days[day];
-                const dayMeals = dayData?.meals || [];
-                const dayFilledCount = dayMeals.filter(m => m.content?.trim()).length;
+        {/* Expanded dropdown with all days */}
+        {showPreviousDays && (
+          <div className="mt-3 bg-white rounded-xl border border-amber-100 overflow-hidden">
+            {CALIBRATION_DAYS.map(day => {
+              const dayData = calibrationData.days[day];
+              const dayMeals = dayData?.meals || [];
+              const dayFilledCount = dayMeals.filter(m => m.content?.trim()).length;
+              const isToday = day === todayKey;
+              const dayCalories = getTodaysCaloriesFromMeals(dayMeals);
 
-                // Get the actual date for this day of week
-                const today = new Date();
-                const todayDayIndex = today.getDay();
-                const dayOrder = { sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5, saturday: 6 };
-                const targetDayIndex = dayOrder[day];
-                const diff = targetDayIndex - todayDayIndex;
-                const targetDate = new Date(today);
-                targetDate.setDate(today.getDate() + diff);
+              // Get day status
+              let statusIcon, statusColor;
+              if (dayData?.completed) {
+                statusIcon = '✓';
+                statusColor = 'text-green-600 bg-green-100';
+              } else if (isToday) {
+                statusIcon = '●';
+                statusColor = 'text-blue-600 bg-blue-100';
+              } else if (dayFilledCount > 0) {
+                statusIcon = '○';
+                statusColor = 'text-amber-600 bg-amber-100';
+              } else {
+                statusIcon = '○';
+                statusColor = 'text-gray-400 bg-gray-100';
+              }
 
-                return (
-                  <div key={day} className="p-3 bg-white/40 rounded-lg border border-amber-100">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm text-gray-600">
-                        {targetDate.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
+              // Get the actual date for this day
+              const today = new Date();
+              const todayDayIndex = today.getDay();
+              const dayOrder = { sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5, saturday: 6 };
+              const targetDayIndex = dayOrder[day];
+              const diff = targetDayIndex - todayDayIndex;
+              const targetDate = new Date(today);
+              targetDate.setDate(today.getDate() + diff);
+
+              return (
+                <div
+                  key={day}
+                  className={`flex items-center justify-between px-3 py-2.5 border-b border-gray-100 last:border-b-0 ${
+                    isToday ? 'bg-blue-50' : ''
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium ${statusColor}`}>
+                      {statusIcon}
+                    </span>
+                    <div>
+                      <span className="text-sm font-medium text-gray-800">
+                        {DAY_LABELS[day]}
+                        {isToday && <span className="text-blue-600 ml-1">(Today)</span>}
                       </span>
-                      <span className="text-xs text-gray-500">
-                        {dayFilledCount} of {dayMeals.length}
-                        {dayData?.completed && <Check size={12} className="inline ml-1 text-green-500" />}
+                      <span className="text-xs text-gray-500 ml-2">
+                        {dayData?.completed ? (
+                          `Complete${dayCalories > 0 ? ` (${dayCalories.toLocaleString()} cal)` : ''}`
+                        ) : isToday ? (
+                          `In Progress${dayCalories > 0 ? ` (${dayCalories.toLocaleString()} cal)` : ''}`
+                        ) : dayFilledCount > 0 ? (
+                          `${dayFilledCount} meals logged`
+                        ) : (
+                          'Not started'
+                        )}
                       </span>
-                    </div>
-                    <div className="space-y-1">
-                      {dayMeals.filter(m => m.content?.trim()).map(meal => (
-                        <div key={meal.id} className="flex items-start gap-2 text-sm">
-                          <Check size={12} className="text-green-500 flex-shrink-0 mt-0.5" />
-                          <span className="text-gray-500 font-medium flex-shrink-0">{meal.label}:</span>
-                          <span className="text-gray-700">{meal.content}</span>
-                        </div>
-                      ))}
                     </div>
                   </div>
-                );
-              })}
+                </div>
+              );
+            })}
+
+            {/* Encouragement message */}
+            <div className="px-3 py-2.5 bg-amber-50 text-center">
+              <p className="text-xs text-amber-700">
+                {progress.remaining > 0
+                  ? `${progress.remaining} more day${progress.remaining > 1 ? 's' : ''} until your personalized insights unlock! 🎉`
+                  : 'Your personalized insights are ready! 🎉'}
+              </p>
             </div>
-          )}
-        </>
+          </div>
+        )}
+      </div>
+
+      {/* Smart Suggestions Popup */}
+      {showSuggestions && (
+        <SmartSuggestionsPopup
+          remainingCalories={(() => {
+            const consumed = getTodaysCaloriesFromMeals(meals);
+            const target = calculateDailyCalorieBudget(profile);
+            return target - consumed;
+          })()}
+          profile={profile}
+          onClose={() => setShowSuggestions(false)}
+        />
       )}
     </div>
   );
 }
 
-// Simple Focus Goal Card for Home (minimal, green-only, no buttons)
-function SimpleFocusGoalCard({ item }) {
+// Simple Focus Goal Card for Home (with edit target and view entries)
+function SimpleFocusGoalCard({ item, onEditTarget, onViewEntries }) {
   const Icon = item.progress?.trackable ? getFocusIcon(item.progress.type) : Target;
   const isComplete = item.progress?.complete;
   const hasProgress = item.progress?.current > 0;
@@ -640,41 +1793,75 @@ function SimpleFocusGoalCard({ item }) {
     progressFillColor = 'bg-gray-300';
   }
 
+  const hasEntries = item.progress?.contributingActivities?.length > 0;
+  const isTrackable = item.progress?.trackable;
+
   return (
     <div className={`rounded-xl ${bgColor} border border-gray-200 p-3`}>
-      <div className="flex items-center gap-3">
+      <div className="flex items-start gap-3">
         {/* Checkbox/Status */}
-        {isComplete ? (
-          <div className="w-5 h-5 rounded-full bg-green-500 flex items-center justify-center flex-shrink-0">
-            <Check size={12} className="text-white" />
-          </div>
-        ) : (
-          <div className="w-5 h-5 rounded-full border-2 border-gray-300 flex-shrink-0" />
-        )}
+        <div className="mt-0.5 flex-shrink-0">
+          {isComplete ? (
+            <div className="w-5 h-5 rounded-full bg-green-500 flex items-center justify-center">
+              <Check size={12} className="text-white" />
+            </div>
+          ) : (
+            <div className="w-5 h-5 rounded-full border-2 border-gray-300" />
+          )}
+        </div>
 
         {/* Goal text and progress */}
         <div className="flex-1 min-w-0">
-          <div className="flex items-center justify-between gap-2 mb-1">
-            <span className={`text-sm ${isComplete ? 'text-green-700' : 'text-gray-800'}`}>
-              {item.action}
-            </span>
-            {item.progress?.trackable && (
-              <span className={`text-sm font-semibold flex-shrink-0 ${
-                isComplete ? 'text-green-600' : 'text-gray-600'
+          {/* Goal text */}
+          <p className={`text-sm leading-snug ${isComplete ? 'text-green-700' : 'text-gray-800'}`}>
+            {item.action}
+          </p>
+
+          {/* Progress bar and actions row */}
+          {isTrackable && (
+            <div className="mt-2 flex items-center gap-2">
+              {/* Progress bar */}
+              <div className={`flex-1 h-1.5 ${progressBarColor} rounded-full overflow-hidden`}>
+                <div
+                  className={`h-full ${progressFillColor} rounded-full transition-all duration-300`}
+                  style={{ width: `${progressPercent}%` }}
+                />
+              </div>
+
+              {/* Progress count */}
+              <span className={`text-xs font-semibold min-w-[32px] text-right ${
+                isComplete ? 'text-green-600' : 'text-gray-500'
               }`}>
                 {item.progress.current}/{item.progress.target}
-                {isComplete && ' ✓'}
               </span>
-            )}
-          </div>
 
-          {/* Progress bar */}
-          {item.progress?.trackable && (
-            <div className={`h-1.5 ${progressBarColor} rounded-full overflow-hidden`}>
-              <div
-                className={`h-full ${progressFillColor} rounded-full transition-all duration-300`}
-                style={{ width: `${progressPercent}%` }}
-              />
+              {/* Action buttons - always visible */}
+              <div className="flex items-center gap-0.5 ml-1">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onEditTarget?.(item);
+                  }}
+                  className="p-1.5 text-gray-400 hover:text-green-600 active:text-green-700 hover:bg-green-50 active:bg-green-100 rounded-lg transition-colors"
+                  title="Edit target"
+                  aria-label="Edit target"
+                >
+                  <Edit3 size={14} />
+                </button>
+                {hasEntries && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onViewEntries?.(item);
+                    }}
+                    className="p-1.5 text-gray-400 hover:text-green-600 active:text-green-700 hover:bg-green-50 active:bg-green-100 rounded-lg transition-colors"
+                    title="View entries"
+                    aria-label="View entries"
+                  >
+                    <FolderOpen size={14} />
+                  </button>
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -683,13 +1870,138 @@ function SimpleFocusGoalCard({ item }) {
   );
 }
 
-// Focus Goals Section for Home - Simplified, Green, No Buttons
+// Edit Target Modal
+function EditTargetModal({ item, onSave, onClose }) {
+  const [target, setTarget] = useState(item.progress?.target || 1);
+
+  function handleSave() {
+    setCustomTarget(item.index, target);
+    onSave();
+    onClose();
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-5" onClick={(e) => e.stopPropagation()}>
+        <h3 className="font-semibold text-gray-900 mb-3">Edit Weekly Target</h3>
+        <p className="text-sm text-gray-600 mb-4">{item.action}</p>
+
+        <div className="flex items-center gap-4 mb-4">
+          <button
+            onClick={() => setTarget(Math.max(1, target - 1))}
+            className="w-10 h-10 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 flex items-center justify-center text-xl font-semibold"
+          >
+            -
+          </button>
+          <span className="text-2xl font-bold text-gray-900 w-12 text-center">{target}</span>
+          <button
+            onClick={() => setTarget(Math.min(7, target + 1))}
+            className="w-10 h-10 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 flex items-center justify-center text-xl font-semibold"
+          >
+            +
+          </button>
+          <span className="text-gray-500">times/week</span>
+        </div>
+
+        <div className="flex gap-2">
+          <button onClick={onClose} className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50">
+            Cancel
+          </button>
+          <button onClick={handleSave} className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">
+            Save
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// View Entries Modal with Delete functionality
+function ViewEntriesModal({ item, onClose, onEntryDeleted }) {
+  const [entries, setEntries] = useState(item.progress?.contributingActivities || []);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+
+  function handleDelete(entry) {
+    setDeleteTarget(entry);
+  }
+
+  function confirmDelete() {
+    if (deleteTarget) {
+      // Delete from activity log
+      deleteActivity(deleteTarget.id);
+      // Update local state
+      setEntries(entries.filter(e => e.id !== deleteTarget.id));
+      setDeleteTarget(null);
+      // Notify parent to refresh
+      onEntryDeleted?.();
+    }
+  }
+
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onClose}>
+        <div className="bg-white rounded-2xl shadow-xl max-w-md w-full max-h-[80vh] overflow-hidden" onClick={(e) => e.stopPropagation()}>
+          <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+            <h3 className="font-semibold text-gray-900">Contributing Entries</h3>
+            <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg">
+              <X size={18} className="text-gray-500" />
+            </button>
+          </div>
+          <div className="p-4 max-h-[60vh] overflow-y-auto">
+            <p className="text-sm text-gray-600 mb-3">{item.action}</p>
+            {entries.length > 0 ? (
+              <div className="space-y-2">
+                {entries.map((entry, idx) => (
+                  <div key={entry.id || idx} className="p-3 bg-gray-50 rounded-lg flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-gray-800">{entry.summary || entry.rawText}</p>
+                      <p className="text-xs text-gray-400 mt-1">
+                        {new Date(entry.timestamp).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => handleDelete(entry)}
+                      className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors flex-shrink-0"
+                      title="Delete entry"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-gray-400 text-center py-4">No entries yet this week</p>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Delete Confirmation Modal */}
+      {deleteTarget && (
+        <DeleteConfirmationModal
+          title="Delete this entry?"
+          itemSummary={deleteTarget.summary || deleteTarget.rawText}
+          onConfirm={confirmDelete}
+          onCancel={() => setDeleteTarget(null)}
+        />
+      )}
+    </>
+  );
+}
+
+// Focus Goals Section for Home - With edit and view actions
 function FocusGoalsCard({ onViewPlaybook }) {
   const [focusProgress, setFocusProgress] = useState([]);
+  const [editingItem, setEditingItem] = useState(null);
+  const [viewingItem, setViewingItem] = useState(null);
 
   useEffect(() => {
     setFocusProgress(getWeeklyFocusProgress());
   }, []);
+
+  function handleRefresh() {
+    setFocusProgress(getWeeklyFocusProgress());
+  }
 
   if (focusProgress.length === 0) return null;
 
@@ -708,10 +2020,15 @@ function FocusGoalsCard({ onViewPlaybook }) {
         </span>
       </div>
 
-      {/* Goals list - simple, clean */}
+      {/* Goals list - with hover actions */}
       <div className="space-y-2">
         {focusProgress.map((item, idx) => (
-          <SimpleFocusGoalCard key={idx} item={item} />
+          <SimpleFocusGoalCard
+            key={idx}
+            item={item}
+            onEditTarget={() => setEditingItem(item)}
+            onViewEntries={() => setViewingItem(item)}
+          />
         ))}
       </div>
 
@@ -724,6 +2041,24 @@ function FocusGoalsCard({ onViewPlaybook }) {
           View Full Focus Goals in Playbook <ChevronRight size={14} />
         </button>
       </div>
+
+      {/* Edit Target Modal */}
+      {editingItem && (
+        <EditTargetModal
+          item={editingItem}
+          onSave={handleRefresh}
+          onClose={() => setEditingItem(null)}
+        />
+      )}
+
+      {/* View Entries Modal */}
+      {viewingItem && (
+        <ViewEntriesModal
+          item={viewingItem}
+          onClose={() => setViewingItem(null)}
+          onEntryDeleted={handleRefresh}
+        />
+      )}
     </div>
   );
 }
@@ -1382,7 +2717,6 @@ function FullPlaybookModal({ isOpen, onClose }) {
 export default function HomePage({ onNavigate, onOpenCheckIn }) {
   const [profile, setProfile] = useState(null);
   const [showPlaybook, setShowPlaybook] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
   const [expandedSections, setExpandedSections] = useState({
     principles: false,
     wins: false,
@@ -1403,11 +2737,15 @@ export default function HomePage({ onNavigate, onOpenCheckIn }) {
     }));
   }
 
-  async function handleQuickEntry(text) {
-    setIsLoading(true);
+  function handleGoToAdvisor(text, isQuestion = false) {
     // Navigate to advisor with the initial question
-    onNavigate('advisor', null, text);
-    setTimeout(() => setIsLoading(false), 500);
+    // Pass isQuestion flag to create new chat with smart title
+    onNavigate('advisor', null, text, isQuestion);
+  }
+
+  function handleActivityLogged() {
+    // Refresh focus goals when activity is logged
+    setProfile(getProfile());
   }
 
   function handleStartCheckIn() {
@@ -1423,7 +2761,10 @@ export default function HomePage({ onNavigate, onOpenCheckIn }) {
             {getGreeting()}, {profile?.name?.split(' ')[0] || 'there'}
           </h1>
           <GoalReminder profile={profile} />
-          <QuickEntryBox onSubmit={handleQuickEntry} isLoading={isLoading} />
+          <QuickEntryBox
+            onSubmit={handleGoToAdvisor}
+            onActivityLogged={handleActivityLogged}
+          />
         </section>
 
         {/* 2. Nutrition Calibration (Week 1 only) - No encouragement message on Home */}

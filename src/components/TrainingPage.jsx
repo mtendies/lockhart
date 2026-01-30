@@ -53,6 +53,7 @@ import {
   TRAINING_TYPES,
 } from '../workoutStore';
 import { getPlaybook } from '../playbookStore';
+import DeleteConfirmationModal from './DeleteConfirmationModal';
 
 const TABS = [
   { id: 'log', label: 'Log', icon: Plus },
@@ -993,6 +994,7 @@ function RecommendationsTab({ onNavigate }) {
 function HistoryTab({ refreshKey, onRefresh }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState('all');
+  const [deleteTarget, setDeleteTarget] = useState(null);
 
   const allWorkouts = useMemo(() => getAllWorkouts(), [refreshKey]);
 
@@ -1038,9 +1040,16 @@ function HistoryTab({ refreshKey, onRefresh }) {
     return groups;
   }, [filteredWorkouts]);
 
-  function handleDelete(id) {
-    deleteWorkout(id);
-    onRefresh();
+  function handleDeleteClick(workout) {
+    setDeleteTarget(workout);
+  }
+
+  function confirmDelete() {
+    if (deleteTarget) {
+      deleteWorkout(deleteTarget.id);
+      setDeleteTarget(null);
+      onRefresh();
+    }
   }
 
   return (
@@ -1092,7 +1101,7 @@ function HistoryTab({ refreshKey, onRefresh }) {
         <WorkoutGroup
           title="This Week"
           workouts={groupedWorkouts.thisWeek}
-          onDelete={handleDelete}
+          onDelete={handleDeleteClick}
         />
       )}
 
@@ -1101,7 +1110,7 @@ function HistoryTab({ refreshKey, onRefresh }) {
         <WorkoutGroup
           title="Last Week"
           workouts={groupedWorkouts.lastWeek}
-          onDelete={handleDelete}
+          onDelete={handleDeleteClick}
         />
       )}
 
@@ -1110,7 +1119,18 @@ function HistoryTab({ refreshKey, onRefresh }) {
         <WorkoutGroup
           title="Earlier"
           workouts={groupedWorkouts.older}
-          onDelete={handleDelete}
+          onDelete={handleDeleteClick}
+        />
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deleteTarget && (
+        <DeleteConfirmationModal
+          title="Delete this workout?"
+          itemSummary={deleteTarget.exercise || deleteTarget.rawText || 'Workout'}
+          description="This will remove it from your Training History and any Focus Goals it was counting toward."
+          onConfirm={confirmDelete}
+          onCancel={() => setDeleteTarget(null)}
         />
       )}
     </div>
@@ -1203,8 +1223,9 @@ function WorkoutCard({ workout, onDelete, compact = false }) {
             )}
             {onDelete && (
               <button
-                onClick={() => onDelete(workout.id)}
+                onClick={() => onDelete(workout)}
                 className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-white rounded-lg"
+                title="Delete workout"
               >
                 <Trash2 size={16} />
               </button>

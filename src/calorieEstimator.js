@@ -1,261 +1,517 @@
 /**
- * Calorie Estimator
- * Parses food descriptions and estimates calories based on common foods
- * Educational tool - estimates only, not precise nutrition tracking
+ * Calorie Estimator - Intelligent Parsing
+ * Uses smart duplicate detection and proper portion recognition
  */
 
-// Common food calorie database (per typical serving)
-const FOOD_DATABASE = {
-  // Breakfast items
-  'oatmeal': { calories: 150, serving: '1 cup cooked', category: 'grain' },
-  'oats': { calories: 150, serving: '1 cup cooked', category: 'grain' },
-  'egg': { calories: 70, serving: '1 large', category: 'protein' },
-  'eggs': { calories: 140, serving: '2 large', category: 'protein' },
-  'scrambled eggs': { calories: 180, serving: '2 eggs with butter', category: 'protein' },
-  'bacon': { calories: 120, serving: '3 slices', category: 'protein' },
-  'toast': { calories: 80, serving: '1 slice', category: 'grain' },
-  'bagel': { calories: 280, serving: '1 medium', category: 'grain' },
-  'pancake': { calories: 175, serving: '2 medium', category: 'grain' },
-  'pancakes': { calories: 350, serving: '4 medium', category: 'grain' },
-  'waffle': { calories: 220, serving: '1 large', category: 'grain' },
-  'cereal': { calories: 150, serving: '1 cup with milk', category: 'grain' },
-  'yogurt': { calories: 150, serving: '1 cup', category: 'dairy' },
-  'greek yogurt': { calories: 130, serving: '1 cup', category: 'dairy' },
-  'fage': { calories: 130, serving: '1 cup', category: 'dairy' },
+// Source URLs for calorie data
+export const SOURCE_URLS = {
+  'USDA': 'https://fdc.nal.usda.gov/',
+  'Fage label': 'https://usa.fage/products/yogurt',
+  'Vega label': 'https://myvega.com/products/vega-protein-greens',
+  'Whole Foods label': 'https://www.wholefoodsmarket.com/',
+  'Starbucks': 'https://www.starbucks.com/menu/nutrition-info',
+  'Typical label': 'https://fdc.nal.usda.gov/',
+  'Estimated': null,
+};
 
-  // Proteins
-  'chicken': { calories: 165, serving: '4 oz cooked', category: 'protein' },
-  'chicken breast': { calories: 165, serving: '4 oz', category: 'protein' },
-  'grilled chicken': { calories: 165, serving: '4 oz', category: 'protein' },
-  'salmon': { calories: 200, serving: '4 oz', category: 'protein' },
-  'tuna': { calories: 120, serving: '4 oz', category: 'protein' },
-  'steak': { calories: 270, serving: '6 oz', category: 'protein' },
-  'beef': { calories: 250, serving: '4 oz', category: 'protein' },
-  'ground beef': { calories: 280, serving: '4 oz (85% lean)', category: 'protein' },
-  'turkey': { calories: 150, serving: '4 oz', category: 'protein' },
-  'pork': { calories: 200, serving: '4 oz', category: 'protein' },
-  'shrimp': { calories: 100, serving: '4 oz', category: 'protein' },
-  'tofu': { calories: 80, serving: '4 oz', category: 'protein' },
+// Number words to digits
+const NUMBER_WORDS = {
+  'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5,
+  'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10,
+  'half': 0.5, 'quarter': 0.25, 'a': 1, 'an': 1,
+  'a couple': 2, 'couple': 2, 'a few': 3, 'few': 3, 'several': 3,
+};
+
+// Unit normalization map
+const UNIT_MAP = {
+  'tablespoon': 'tbsp', 'tablespoons': 'tbsp', 'tbsp': 'tbsp', 't': 'tbsp',
+  'teaspoon': 'tsp', 'teaspoons': 'tsp', 'tsp': 'tsp',
+  'cup': 'cup', 'cups': 'cup', 'c': 'cup',
+  'ounce': 'oz', 'ounces': 'oz', 'oz': 'oz',
+  'pound': 'lb', 'pounds': 'lb', 'lb': 'lb', 'lbs': 'lb',
+  'gram': 'g', 'grams': 'g', 'g': 'g',
+  'scoop': 'scoop', 'scoops': 'scoop',
+  'handful': 'handful', 'handfuls': 'handful',
+  'spoonful': 'spoonful', 'spoonfuls': 'spoonful',
+  'piece': 'piece', 'pieces': 'piece',
+  'slice': 'slice', 'slices': 'slice',
+  'serving': 'serving', 'servings': 'serving',
+  'glass': 'cup', 'glasses': 'cup',
+};
+
+// Known brand names (to combine with generic products)
+const BRAND_NAMES = new Set([
+  'vega', 'oikos', 'siggi', 'siggis', 'chobani', 'fage', 'quest',
+  'orgain', 'optimum', 'garden of life', 'bob\'s red mill', 'bobs red mill',
+  'whole foods', 'trader joe', 'trader joes', 'kirkland',
+  'premier protein', 'fairlife', 'muscle milk', 'isopure',
+  'rxbar', 'kind', 'larabar', 'clif', 'nature valley',
+]);
+
+// Food database with calories per standard unit
+const FOOD_DATABASE = {
+  // Protein powders & supplements
+  'vega protein': { cal: 140, unit: 'scoop', serving: '1 scoop (36g)', source: 'Vega label' },
+  'vega': { cal: 140, unit: 'scoop', serving: '1 scoop (36g)', source: 'Vega label' },
+  'protein powder': { cal: 120, unit: 'scoop', serving: '1 scoop (~30g)', source: 'Typical label' },
+  'whey protein': { cal: 120, unit: 'scoop', serving: '1 scoop', source: 'Typical label' },
+  'whey': { cal: 120, unit: 'scoop', serving: '1 scoop', source: 'Typical label' },
+  'collagen': { cal: 35, unit: 'scoop', serving: '1 scoop', source: 'Typical label' },
+
+  // Seeds
+  'super seed blend': { cal: 60, unit: 'tbsp', serving: '1 tbsp', source: 'Whole Foods label' },
+  'super seed': { cal: 60, unit: 'tbsp', serving: '1 tbsp', source: 'Whole Foods label' },
+  'seed blend': { cal: 60, unit: 'tbsp', serving: '1 tbsp', source: 'USDA' },
+  'chia seeds': { cal: 60, unit: 'tbsp', serving: '1 tbsp', source: 'USDA' },
+  'chia': { cal: 60, unit: 'tbsp', serving: '1 tbsp', source: 'USDA' },
+  'flax seeds': { cal: 55, unit: 'tbsp', serving: '1 tbsp', source: 'USDA' },
+  'flax': { cal: 55, unit: 'tbsp', serving: '1 tbsp', source: 'USDA' },
+  'hemp seeds': { cal: 55, unit: 'tbsp', serving: '1 tbsp', source: 'USDA' },
+  'hemp': { cal: 55, unit: 'tbsp', serving: '1 tbsp', source: 'USDA' },
 
   // Dairy
-  'milk': { calories: 120, serving: '1 cup', category: 'dairy' },
-  'almond milk': { calories: 40, serving: '1 cup', category: 'dairy' },
-  'cheese': { calories: 110, serving: '1 oz', category: 'dairy' },
-  'goat cheese': { calories: 100, serving: '1 oz', category: 'dairy' },
-  'cream cheese': { calories: 100, serving: '2 tbsp', category: 'dairy' },
-  'cottage cheese': { calories: 110, serving: '1/2 cup', category: 'dairy' },
-
-  // Grains & Carbs
-  'rice': { calories: 200, serving: '1 cup cooked', category: 'grain' },
-  'brown rice': { calories: 220, serving: '1 cup cooked', category: 'grain' },
-  'pasta': { calories: 200, serving: '1 cup cooked', category: 'grain' },
-  'bread': { calories: 80, serving: '1 slice', category: 'grain' },
-  'tortilla': { calories: 90, serving: '1 medium', category: 'grain' },
-  'quinoa': { calories: 220, serving: '1 cup cooked', category: 'grain' },
-  'potato': { calories: 160, serving: '1 medium', category: 'grain' },
-  'sweet potato': { calories: 100, serving: '1 medium', category: 'grain' },
-
-  // Vegetables
-  'salad': { calories: 50, serving: '2 cups greens', category: 'vegetable' },
-  'spinach': { calories: 7, serving: '1 cup', category: 'vegetable' },
-  'broccoli': { calories: 55, serving: '1 cup', category: 'vegetable' },
-  'vegetables': { calories: 50, serving: '1 cup mixed', category: 'vegetable' },
-  'veggies': { calories: 50, serving: '1 cup mixed', category: 'vegetable' },
-  'avocado': { calories: 240, serving: '1 whole', category: 'vegetable' },
-  'carrots': { calories: 50, serving: '1 cup', category: 'vegetable' },
+  'fage 2% yogurt': { cal: 120, unit: 'cup', serving: '1 cup', source: 'Fage label' },
+  'fage yogurt': { cal: 120, unit: 'cup', serving: '1 cup', source: 'Fage label' },
+  'fage 2%': { cal: 120, unit: 'cup', serving: '1 cup', source: 'Fage label' },
+  'fage': { cal: 120, unit: 'cup', serving: '1 cup', source: 'Fage label' },
+  'greek yogurt': { cal: 130, unit: 'cup', serving: '1 cup', source: 'USDA' },
+  'yogurt': { cal: 100, unit: 'cup', serving: '1 cup', source: 'USDA' },
+  'almond milk': { cal: 40, unit: 'cup', serving: '1 cup', source: 'USDA' },
+  'oat milk': { cal: 120, unit: 'cup', serving: '1 cup', source: 'USDA' },
+  'soy milk': { cal: 80, unit: 'cup', serving: '1 cup', source: 'USDA' },
+  'coconut milk': { cal: 45, unit: 'cup', serving: '1 cup', source: 'USDA' },
+  'milk': { cal: 120, unit: 'cup', serving: '1 cup', source: 'USDA' },
+  'cottage cheese': { cal: 110, unit: 'cup', serving: '1/2 cup', source: 'USDA' },
+  'goat cheese': { cal: 75, unit: 'oz', serving: '1 oz', source: 'USDA' },
+  'cream cheese': { cal: 50, unit: 'tbsp', serving: '1 tbsp', source: 'USDA' },
+  'feta cheese': { cal: 75, unit: 'oz', serving: '1 oz', source: 'USDA' },
+  'cheese': { cal: 110, unit: 'oz', serving: '1 oz', source: 'USDA' },
 
   // Fruits
-  'banana': { calories: 105, serving: '1 medium', category: 'fruit' },
-  'apple': { calories: 95, serving: '1 medium', category: 'fruit' },
-  'orange': { calories: 60, serving: '1 medium', category: 'fruit' },
-  'berries': { calories: 85, serving: '1 cup', category: 'fruit' },
-  'blueberries': { calories: 85, serving: '1 cup', category: 'fruit' },
-  'strawberries': { calories: 50, serving: '1 cup', category: 'fruit' },
-  'grapes': { calories: 60, serving: '1 cup', category: 'fruit' },
+  'banana': { cal: 105, unit: 'banana', serving: '1 medium (118g)', source: 'USDA' },
+  'apple': { cal: 95, unit: 'apple', serving: '1 medium', source: 'USDA' },
+  'orange': { cal: 60, unit: 'orange', serving: '1 medium', source: 'USDA' },
+  'blueberries': { cal: 85, unit: 'cup', serving: '1 cup', source: 'USDA' },
+  'strawberries': { cal: 50, unit: 'cup', serving: '1 cup', source: 'USDA' },
+  'mixed berries': { cal: 70, unit: 'cup', serving: '1 cup', source: 'USDA' },
+  'berries': { cal: 70, unit: 'cup', serving: '1 cup', source: 'USDA' },
+  'grapes': { cal: 60, unit: 'cup', serving: '1 cup', source: 'USDA' },
+  'mango': { cal: 100, unit: 'cup', serving: '1 cup', source: 'USDA' },
+  'avocado': { cal: 240, unit: 'avocado', serving: '1 whole', source: 'USDA' },
 
-  // Nuts & Seeds
-  'almonds': { calories: 165, serving: '1 oz (~23)', category: 'nuts', tip: 'Nuts are calorie-dense! A small handful is about 165 calories.' },
-  'peanuts': { calories: 170, serving: '1 oz', category: 'nuts' },
-  'walnuts': { calories: 185, serving: '1 oz', category: 'nuts' },
-  'cashews': { calories: 160, serving: '1 oz', category: 'nuts' },
-  'peanut butter': { calories: 190, serving: '2 tbsp', category: 'nuts', tip: 'Nut butters are calorie-dense! 2 tbsp = 190 calories.' },
-  'almond butter': { calories: 200, serving: '2 tbsp', category: 'nuts' },
-  'seeds': { calories: 150, serving: '1 oz', category: 'nuts' },
-  'chia seeds': { calories: 140, serving: '1 oz', category: 'nuts' },
-  'super seed': { calories: 150, serving: '2 tbsp', category: 'nuts' },
+  // Vegetables
+  'spinach': { cal: 7, unit: 'cup', serving: '1 cup', source: 'USDA' },
+  'kale': { cal: 33, unit: 'cup', serving: '1 cup', source: 'USDA' },
+  'broccoli': { cal: 55, unit: 'cup', serving: '1 cup', source: 'USDA' },
+  'carrots': { cal: 50, unit: 'cup', serving: '1 cup', source: 'USDA' },
+  'riced cauliflower': { cal: 25, unit: 'cup', serving: '1 cup', source: 'USDA' },
+  'cauliflower rice': { cal: 25, unit: 'cup', serving: '1 cup', source: 'USDA' },
+  'cauliflower': { cal: 25, unit: 'cup', serving: '1 cup', source: 'USDA' },
+  'kimchi': { cal: 10, unit: 'cup', serving: '1/4 cup', source: 'USDA' },
+  'vegetables': { cal: 50, unit: 'cup', serving: '1 cup', source: 'USDA' },
+  'veggies': { cal: 50, unit: 'cup', serving: '1 cup', source: 'USDA' },
 
-  // Supplements & Protein
-  'protein powder': { calories: 120, serving: '1 scoop', category: 'supplement' },
-  'protein shake': { calories: 200, serving: '1 shake', category: 'supplement' },
-  'vega': { calories: 130, serving: '1 scoop', category: 'supplement' },
-  'whey': { calories: 120, serving: '1 scoop', category: 'supplement' },
-  'smoothie': { calories: 300, serving: '16 oz', category: 'beverage' },
+  // Proteins
+  'scrambled eggs': { cal: 90, unit: 'egg', serving: '1 egg', source: 'USDA' },
+  'eggs': { cal: 70, unit: 'egg', serving: '1 large', source: 'USDA' },
+  'egg': { cal: 70, unit: 'egg', serving: '1 large', source: 'USDA' },
+  'chicken breast': { cal: 165, unit: 'oz', serving: '4 oz', source: 'USDA' },
+  'grilled chicken': { cal: 165, unit: 'oz', serving: '4 oz', source: 'USDA' },
+  'chicken': { cal: 165, unit: 'oz', serving: '4 oz', source: 'USDA' },
+  'salmon': { cal: 200, unit: 'oz', serving: '4 oz', source: 'USDA' },
+  'tuna': { cal: 120, unit: 'oz', serving: '4 oz', source: 'USDA' },
+  'steak': { cal: 270, unit: 'oz', serving: '6 oz', source: 'USDA' },
+  'ground beef': { cal: 70, unit: 'oz', serving: '1 oz (cooked)', source: 'USDA' },
+  'beef': { cal: 250, unit: 'oz', serving: '4 oz', source: 'USDA' },
+  'turkey': { cal: 150, unit: 'oz', serving: '4 oz', source: 'USDA' },
+  'bacon': { cal: 40, unit: 'slice', serving: '1 slice', source: 'USDA' },
+  'tofu': { cal: 80, unit: 'oz', serving: '4 oz', source: 'USDA' },
+  'shrimp': { cal: 100, unit: 'oz', serving: '4 oz', source: 'USDA' },
 
-  // Condiments & Additions
-  'honey': { calories: 60, serving: '1 tbsp', category: 'condiment' },
-  'maple syrup': { calories: 50, serving: '1 tbsp', category: 'condiment' },
-  'butter': { calories: 100, serving: '1 tbsp', category: 'condiment', tip: 'Butter adds up quickly - 1 tbsp = 100 calories.' },
-  'olive oil': { calories: 120, serving: '1 tbsp', category: 'condiment', tip: 'Oils are calorie-dense! 1 tbsp = 120 calories.' },
-  'oil': { calories: 120, serving: '1 tbsp', category: 'condiment' },
-  'dressing': { calories: 80, serving: '2 tbsp', category: 'condiment', tip: 'Salad dressings can add 80-150 calories per serving.' },
-  'mayo': { calories: 90, serving: '1 tbsp', category: 'condiment' },
-  'mayonnaise': { calories: 90, serving: '1 tbsp', category: 'condiment' },
-  'ketchup': { calories: 20, serving: '1 tbsp', category: 'condiment' },
-  'mustard': { calories: 5, serving: '1 tsp', category: 'condiment' },
-  'cocoa powder': { calories: 20, serving: '1 tbsp', category: 'condiment' },
+  // Grains
+  'oatmeal': { cal: 150, unit: 'cup', serving: '1 cup cooked', source: 'USDA', isComposite: true },
+  'oats': { cal: 150, unit: 'cup', serving: '1 cup cooked', source: 'USDA' },
+  'rice': { cal: 200, unit: 'cup', serving: '1 cup cooked', source: 'USDA' },
+  'brown rice': { cal: 220, unit: 'cup', serving: '1 cup cooked', source: 'USDA' },
+  'quinoa': { cal: 220, unit: 'cup', serving: '1 cup cooked', source: 'USDA' },
+  'pasta': { cal: 200, unit: 'cup', serving: '1 cup cooked', source: 'USDA' },
+  'bread': { cal: 80, unit: 'slice', serving: '1 slice', source: 'USDA' },
+  'toast': { cal: 80, unit: 'slice', serving: '1 slice', source: 'USDA' },
+  'bagel': { cal: 280, unit: 'bagel', serving: '1 medium', source: 'USDA' },
+  'tortilla': { cal: 90, unit: 'tortilla', serving: '1 medium', source: 'USDA' },
+  'pancake': { cal: 90, unit: 'pancake', serving: '1 medium', source: 'USDA' },
+  'pancakes': { cal: 90, unit: 'pancake', serving: '1 medium', source: 'USDA' },
+  'waffle': { cal: 220, unit: 'waffle', serving: '1 large', source: 'USDA' },
+  'cereal': { cal: 150, unit: 'cup', serving: '1 cup with milk', source: 'USDA' },
+  'granola': { cal: 140, unit: 'cup', serving: '1/4 cup', source: 'USDA' },
+  'potato': { cal: 160, unit: 'potato', serving: '1 medium', source: 'USDA' },
+  'sweet potato': { cal: 100, unit: 'potato', serving: '1 medium', source: 'USDA' },
+
+  // Nuts & Nut butters
+  'peanut butter': { cal: 95, unit: 'tbsp', serving: '1 tbsp', source: 'USDA' },
+  'almond butter': { cal: 100, unit: 'tbsp', serving: '1 tbsp', source: 'USDA' },
+  'almonds': { cal: 165, unit: 'oz', serving: '1 oz (~23)', source: 'USDA' },
+  'peanuts': { cal: 170, unit: 'oz', serving: '1 oz', source: 'USDA' },
+  'walnuts': { cal: 185, unit: 'oz', serving: '1 oz', source: 'USDA' },
+  'cashews': { cal: 160, unit: 'oz', serving: '1 oz', source: 'USDA' },
+
+  // Condiments
+  'honey': { cal: 60, unit: 'tbsp', serving: '1 tbsp', source: 'USDA' },
+  'maple syrup': { cal: 50, unit: 'tbsp', serving: '1 tbsp', source: 'USDA' },
+  'butter': { cal: 100, unit: 'tbsp', serving: '1 tbsp', source: 'USDA' },
+  'olive oil': { cal: 120, unit: 'tbsp', serving: '1 tbsp', source: 'USDA' },
+  'coconut oil': { cal: 120, unit: 'tbsp', serving: '1 tbsp', source: 'USDA' },
+  'oil': { cal: 120, unit: 'tbsp', serving: '1 tbsp', source: 'USDA' },
+  'cocoa powder': { cal: 12, unit: 'tbsp', serving: '1 tbsp', source: 'USDA' },
+  'cocoa': { cal: 12, unit: 'tbsp', serving: '1 tbsp', source: 'USDA' },
+  'dressing': { cal: 80, unit: 'tbsp', serving: '2 tbsp', source: 'USDA' },
+  'mayo': { cal: 90, unit: 'tbsp', serving: '1 tbsp', source: 'USDA' },
+  'mayonnaise': { cal: 90, unit: 'tbsp', serving: '1 tbsp', source: 'USDA' },
 
   // Beverages
-  'coffee': { calories: 5, serving: '1 cup black', category: 'beverage' },
-  'latte': { calories: 190, serving: '12 oz', category: 'beverage' },
-  'juice': { calories: 120, serving: '8 oz', category: 'beverage' },
-  'orange juice': { calories: 110, serving: '8 oz', category: 'beverage' },
-  'soda': { calories: 140, serving: '12 oz', category: 'beverage' },
-  'beer': { calories: 150, serving: '12 oz', category: 'beverage', tip: 'Alcohol has empty calories - no nutritional value.' },
-  'wine': { calories: 125, serving: '5 oz', category: 'beverage' },
+  'coffee': { cal: 5, unit: 'cup', serving: '1 cup black', source: 'USDA' },
+  'latte': { cal: 190, unit: 'cup', serving: '12 oz', source: 'Starbucks' },
+  'orange juice': { cal: 110, unit: 'cup', serving: '8 oz', source: 'USDA' },
+  'juice': { cal: 120, unit: 'cup', serving: '8 oz', source: 'USDA' },
 
   // Snacks
-  'chips': { calories: 150, serving: '1 oz (~15 chips)', category: 'snack' },
-  'crackers': { calories: 120, serving: '6 crackers', category: 'snack' },
-  'pretzels': { calories: 110, serving: '1 oz', category: 'snack' },
-  'granola bar': { calories: 140, serving: '1 bar', category: 'snack' },
-  'protein bar': { calories: 220, serving: '1 bar', category: 'snack' },
+  'protein bar': { cal: 220, unit: 'bar', serving: '1 bar', source: 'Typical label' },
+  'granola bar': { cal: 140, unit: 'bar', serving: '1 bar', source: 'USDA' },
+  'chips': { cal: 150, unit: 'oz', serving: '1 oz', source: 'USDA' },
+  'dark chocolate': { cal: 170, unit: 'oz', serving: '1 oz', source: 'USDA' },
+  'chocolate': { cal: 150, unit: 'oz', serving: '1 oz', source: 'USDA' },
+  'ice cream': { cal: 250, unit: 'cup', serving: '1/2 cup', source: 'USDA' },
+  'cookie': { cal: 100, unit: 'cookie', serving: '1 medium', source: 'USDA' },
+  'cookies': { cal: 100, unit: 'cookie', serving: '1 medium', source: 'USDA' },
 
-  // Desserts
-  'chocolate': { calories: 150, serving: '1 oz', category: 'dessert' },
-  'dark chocolate': { calories: 170, serving: '1 oz', category: 'dessert' },
-  'ice cream': { calories: 250, serving: '1/2 cup', category: 'dessert' },
-  'cookie': { calories: 100, serving: '1 medium', category: 'dessert' },
-  'cookies': { calories: 200, serving: '2 medium', category: 'dessert' },
-  'cake': { calories: 350, serving: '1 slice', category: 'dessert' },
-
-  // Meals (estimates)
-  'sandwich': { calories: 400, serving: '1 sandwich', category: 'meal' },
-  'burger': { calories: 550, serving: '1 with bun', category: 'meal' },
-  'pizza': { calories: 280, serving: '1 slice', category: 'meal' },
-  'curry': { calories: 350, serving: '1 cup', category: 'meal' },
-  'stir fry': { calories: 300, serving: '1.5 cups', category: 'meal' },
-  'soup': { calories: 150, serving: '1 cup', category: 'meal' },
-  'burrito': { calories: 500, serving: '1 burrito', category: 'meal' },
-  'tacos': { calories: 400, serving: '2 tacos', category: 'meal' },
+  // Composite meals (only used if no ingredients listed)
+  'smoothie': { cal: 300, unit: 'smoothie', serving: '16 oz', source: 'Estimated', isComposite: true },
+  'shake': { cal: 300, unit: 'shake', serving: '16 oz', source: 'Estimated', isComposite: true },
+  'sandwich': { cal: 400, unit: 'sandwich', serving: '1 sandwich', source: 'Estimated', isComposite: true },
+  'burger': { cal: 550, unit: 'burger', serving: '1 with bun', source: 'Estimated', isComposite: true },
+  'burrito': { cal: 500, unit: 'burrito', serving: '1 burrito', source: 'Estimated', isComposite: true },
+  'taco': { cal: 200, unit: 'taco', serving: '1 taco', source: 'USDA', isComposite: true },
+  'tacos': { cal: 200, unit: 'taco', serving: '1 taco', source: 'USDA', isComposite: true },
+  'pizza': { cal: 280, unit: 'slice', serving: '1 slice', source: 'USDA', isComposite: true },
+  'salad': { cal: 150, unit: 'salad', serving: '1 side salad', source: 'Estimated', isComposite: true },
+  'soup': { cal: 150, unit: 'cup', serving: '1 cup', source: 'USDA', isComposite: true },
+  'bowl': { cal: 450, unit: 'bowl', serving: '1 bowl', source: 'Estimated', isComposite: true },
 };
-
-// Quantity modifiers
-const QUANTITY_MODIFIERS = {
-  'half': 0.5,
-  '1/2': 0.5,
-  'quarter': 0.25,
-  '1/4': 0.25,
-  'double': 2,
-  'two': 2,
-  'three': 3,
-  'four': 4,
-  'few': 1.5,
-  'some': 1,
-  'handful': 1,
-  'large': 1.5,
-  'big': 1.5,
-  'small': 0.7,
-  'little': 0.5,
-};
-
-// Size multipliers for "cups" etc
-const UNIT_PATTERNS = [
-  { pattern: /(\d+(?:\.\d+)?)\s*(?:cups?|c)\b/gi, multiplier: 1 },
-  { pattern: /(\d+(?:\.\d+)?)\s*(?:tbsp|tablespoons?)\b/gi, baseCalories: 60 },
-  { pattern: /(\d+(?:\.\d+)?)\s*(?:tsp|teaspoons?)\b/gi, baseCalories: 20 },
-  { pattern: /(\d+(?:\.\d+)?)\s*(?:oz|ounces?)\b/gi, multiplier: 1 },
-  { pattern: /(\d+(?:\.\d+)?)\s*(?:scoops?)\b/gi, multiplier: 1 },
-  { pattern: /(\d+(?:\.\d+)?)\s*(?:slices?)\b/gi, multiplier: 1 },
-  { pattern: /(\d+(?:\.\d+)?)\s*(?:pieces?)\b/gi, multiplier: 1 },
-];
 
 /**
- * Parse a food description and estimate calories
- * @param {string} text - The food description (e.g., "oatmeal with honey and 2 eggs")
- * @returns {Object} - { totalCalories, breakdown: [{food, calories, serving}], tips: [], confidence: 'low'|'medium'|'high' }
+ * Convert number words to digits in text
  */
-export function estimateCalories(text) {
-  if (!text || typeof text !== 'string') {
-    return { totalCalories: 0, breakdown: [], tips: [], confidence: 'low' };
+function convertNumberWords(text) {
+  let result = text.toLowerCase();
+
+  // Handle multi-word numbers first (longest match first)
+  const sortedNumbers = Object.entries(NUMBER_WORDS).sort((a, b) => b[0].length - a[0].length);
+
+  for (const [word, num] of sortedNumbers) {
+    result = result.replace(new RegExp(`\\b${word}\\b`, 'gi'), num.toString());
   }
 
-  const normalizedText = text.toLowerCase();
-  const breakdown = [];
-  const tips = new Set();
-  let totalCalories = 0;
-  let matchedFoods = 0;
+  // Handle fractions
+  result = result.replace(/\b1\/2\b/g, '0.5');
+  result = result.replace(/\b1\/4\b/g, '0.25');
+  result = result.replace(/\b3\/4\b/g, '0.75');
+  result = result.replace(/\b1\/3\b/g, '0.33');
+  result = result.replace(/\b2\/3\b/g, '0.67');
 
-  // Find all matching foods in the text
-  for (const [foodName, foodData] of Object.entries(FOOD_DATABASE)) {
-    // Check if this food is mentioned
-    const regex = new RegExp(`\\b${foodName.replace(/\s+/g, '\\s+')}\\b`, 'i');
-    if (regex.test(normalizedText)) {
-      let quantity = 1;
+  return result;
+}
 
-      // Check for quantity modifiers
-      for (const [modifier, multiplier] of Object.entries(QUANTITY_MODIFIERS)) {
-        const modRegex = new RegExp(`${modifier}\\s+(?:of\\s+)?${foodName.replace(/\s+/g, '\\s+')}`, 'i');
-        if (modRegex.test(normalizedText)) {
-          quantity = multiplier;
+/**
+ * Normalize unit to standard form
+ */
+function normalizeUnit(unit) {
+  if (!unit) return null;
+  return UNIT_MAP[unit.toLowerCase()] || unit.toLowerCase();
+}
+
+/**
+ * Convert quantity between units
+ * Returns { quantity, unit } with the target unit
+ */
+function convertUnits(quantity, fromUnit, toUnit) {
+  if (!fromUnit || !toUnit || fromUnit === toUnit) {
+    return { quantity, unit: toUnit || fromUnit };
+  }
+
+  // Conversion factors
+  const conversions = {
+    'lb_to_oz': 16,      // 1 lb = 16 oz
+    'oz_to_lb': 1/16,
+    'tbsp_to_tsp': 3,    // 1 tbsp = 3 tsp
+    'tsp_to_tbsp': 1/3,
+    'cup_to_tbsp': 16,   // 1 cup = 16 tbsp
+    'tbsp_to_cup': 1/16,
+    'cup_to_oz': 8,      // 1 cup = 8 fl oz (volume)
+    'oz_to_cup': 1/8,
+  };
+
+  const key = `${fromUnit}_to_${toUnit}`;
+  if (conversions[key]) {
+    return { quantity: quantity * conversions[key], unit: toUnit };
+  }
+
+  // No conversion found, return original
+  return { quantity, unit: fromUnit };
+}
+
+/**
+ * Split entry into individual ingredient segments
+ */
+function splitIntoSegments(text) {
+  // Split by common delimiters: comma, period, semicolon, "and", "with", newline
+  // Be careful not to replace periods that are part of decimal numbers (e.g., ".5" or "0.5")
+  let segments = text
+    .replace(/\band\b/gi, ',')
+    .replace(/\bwith\b/gi, ',')  // Handle "scrambled eggs with spinach"
+    .replace(/\bplus\b/gi, ',')  // Handle "eggs plus cheese"
+    .replace(/\badded\b/gi, ',') // Handle "added spinach"
+    // Only replace periods that are sentence-ending (followed by space+letter or end of string)
+    // NOT periods in decimals like ".5" or "0.5"
+    .replace(/\.(?=\s+[a-zA-Z]|$)/g, ',')
+    .replace(/;/g, ',')
+    .replace(/\n/g, ',')
+    .split(',')
+    .map(s => s.trim())
+    .filter(s => s.length > 0);
+
+  return segments;
+}
+
+/**
+ * Parse a single ingredient segment into quantity, unit, and food
+ */
+function parseSegment(segment) {
+  const text = convertNumberWords(segment.trim());
+
+  // Pattern: [quantity] [unit] (of) [food]
+  // Examples: "2 tbsp of peanut butter", "1.5 cups almond milk", "1 banana", ".5 pounds beef"
+  // Note: \.?\d+ handles decimals with or without leading zero (.5 or 0.5)
+  const unitPattern = /^(\.?\d+\.?\d*)\s*(tablespoons?|tbsp|teaspoons?|tsp|cups?|oz|ounces?|pounds?|lbs?|lb|grams?|g|scoops?|handfuls?|spoonfuls?|pieces?|slices?|servings?|glasses?)?\s*(?:of\s+)?(.+)$/i;
+
+  const match = text.match(unitPattern);
+
+  if (match) {
+    const quantity = parseFloat(match[1]) || 1;
+    const unit = normalizeUnit(match[2]);
+    let food = match[3].trim();
+
+    // Clean up parenthetical info like "(85/15)" from food name
+    food = food.replace(/\s*\([^)]*\)\s*/g, ' ').trim();
+
+    return { quantity, unit, food, original: segment };
+  }
+
+  // No quantity found - check if starts with food name
+  return { quantity: 1, unit: null, food: text.trim(), original: segment };
+}
+
+/**
+ * Find the best matching food in the database
+ */
+function findFood(foodText) {
+  const normalized = foodText.toLowerCase().trim();
+
+  // Direct match
+  if (FOOD_DATABASE[normalized]) {
+    return { name: normalized, data: FOOD_DATABASE[normalized] };
+  }
+
+  // Sort foods by length (longest first) for best matching
+  const sortedFoods = Object.keys(FOOD_DATABASE).sort((a, b) => b.length - a.length);
+
+  // Look for the longest matching food name in the text
+  for (const foodName of sortedFoods) {
+    if (normalized.includes(foodName)) {
+      return { name: foodName, data: FOOD_DATABASE[foodName] };
+    }
+  }
+
+  // No match found
+  return null;
+}
+
+/**
+ * Check if entry contains ingredient list (has delimiters or "with")
+ */
+function hasIngredientList(text) {
+  const lower = text.toLowerCase();
+  return lower.includes(',') ||
+         lower.includes(' and ') ||
+         lower.includes(' with ') ||
+         lower.includes(':') ||
+         lower.includes(';');
+}
+
+/**
+ * Smart deduplication using substring and word overlap detection
+ */
+function deduplicateItems(items) {
+  if (items.length <= 1) return items;
+
+  // Sort by food name length (longest first)
+  const sorted = [...items].sort((a, b) => b.food.length - a.food.length);
+  const unique = [];
+
+  for (const item of sorted) {
+    const itemFoodLower = item.food.toLowerCase();
+    const itemWords = itemFoodLower.split(/\s+/).filter(w => w.length > 2);
+
+    let isDuplicate = false;
+
+    for (const existing of unique) {
+      const existingFoodLower = existing.food.toLowerCase();
+      const existingWords = existingFoodLower.split(/\s+/).filter(w => w.length > 2);
+
+      // Check 1: Is this item's food a substring of existing food?
+      if (existingFoodLower.includes(itemFoodLower)) {
+        isDuplicate = true;
+        // Add this item's quantity to existing if same unit
+        if (item.unit === existing.unit || !item.unit) {
+          // Don't double count - the longer name already captured it
+        }
+        break;
+      }
+
+      // Check 2: Is existing food a substring of this item's food?
+      if (itemFoodLower.includes(existingFoodLower)) {
+        // Replace shorter with longer
+        const idx = unique.indexOf(existing);
+        unique.splice(idx, 1);
+        break;
+      }
+
+      // Check 3: Word overlap >= 50%
+      if (itemWords.length > 0 && existingWords.length > 0) {
+        const overlap = itemWords.filter(w => existingWords.includes(w)).length;
+        const minWords = Math.min(itemWords.length, existingWords.length);
+        const overlapPercent = overlap / minWords;
+
+        if (overlapPercent >= 0.5) {
+          isDuplicate = true;
           break;
         }
       }
 
-      // Check for numeric quantities
-      const numericRegex = new RegExp(`(\\d+(?:\\.\\d+)?)\\s*(?:of\\s+)?${foodName.replace(/\s+/g, '\\s+')}`, 'i');
-      const numMatch = normalizedText.match(numericRegex);
-      if (numMatch) {
-        quantity = parseFloat(numMatch[1]);
+      // Check 4: Brand name combined with generic (e.g., "vega" + "protein powder")
+      const isBrand = BRAND_NAMES.has(itemFoodLower);
+      const existingIsBrand = BRAND_NAMES.has(existingFoodLower);
+
+      if (isBrand || existingIsBrand) {
+        // Check if one is a brand and the other contains related product words
+        const productWords = ['protein', 'yogurt', 'milk', 'bar', 'powder', 'shake'];
+        const itemHasProduct = productWords.some(p => itemFoodLower.includes(p));
+        const existingHasProduct = productWords.some(p => existingFoodLower.includes(p));
+
+        if ((isBrand && existingHasProduct) || (existingIsBrand && itemHasProduct)) {
+          // These are likely the same item (brand + generic)
+          isDuplicate = true;
+          break;
+        }
+      }
+    }
+
+    if (!isDuplicate) {
+      unique.push(item);
+    }
+  }
+
+  return unique;
+}
+
+/**
+ * Main calorie estimation function
+ */
+export function estimateCalories(text) {
+  if (!text || typeof text !== 'string') {
+    return { totalCalories: 0, items: [], tips: [], confidence: 'low' };
+  }
+
+  const hasIngredients = hasIngredientList(text);
+  const segments = splitIntoSegments(text);
+  const parsedItems = [];
+  const tips = new Set();
+
+  for (const segment of segments) {
+    const parsed = parseSegment(segment);
+
+    // Find matching food
+    const foodMatch = findFood(parsed.food);
+
+    if (foodMatch) {
+      const { name: foodName, data: foodData } = foodMatch;
+
+      // Skip composite items if ingredients are listed
+      if (foodData.isComposite && hasIngredients) {
+        continue;
       }
 
-      const estimatedCalories = Math.round(foodData.calories * quantity);
+      // Determine unit and quantity
+      let unit = parsed.unit || foodData.unit;
+      let quantity = parsed.quantity;
 
-      breakdown.push({
-        food: foodName.charAt(0).toUpperCase() + foodName.slice(1),
-        calories: estimatedCalories,
-        serving: quantity !== 1 ? `${quantity}x ${foodData.serving}` : foodData.serving,
+      // Convert units if the parsed unit differs from the database unit
+      if (parsed.unit && parsed.unit !== foodData.unit) {
+        const converted = convertUnits(quantity, parsed.unit, foodData.unit);
+        quantity = converted.quantity;
+        unit = converted.unit;
+      }
+
+      // Calculate calories
+      const baseCalPerUnit = foodData.cal;
+      const calories = Math.round(baseCalPerUnit * quantity);
+
+      // Format the calculation string
+      const unitPlural = quantity !== 1 && !unit.endsWith('s') ? unit + 's' : unit;
+      const calculation = `${quantity % 1 === 0 ? quantity : quantity.toFixed(1)} ${quantity === 1 ? unit : unitPlural} × ${baseCalPerUnit} cal/${unit}`;
+
+      parsedItems.push({
+        food: foodName.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
+        calories,
+        quantity,
+        unit,
+        calculation,
+        source: foodData.source,
+        sourceUrl: SOURCE_URLS[foodData.source] || null,
+        baseServing: foodData.serving,
       });
 
-      totalCalories += estimatedCalories;
-      matchedFoods++;
-
-      if (foodData.tip) {
-        tips.add(foodData.tip);
+      // Add tips for calorie-dense items
+      if (foodData.cal >= 100 && ['tbsp', 'oz'].includes(unit)) {
+        tips.add(`${foodName.charAt(0).toUpperCase() + foodName.slice(1)} is calorie-dense at ${foodData.cal} cal per ${unit}.`);
       }
     }
   }
 
-  // Determine confidence level
-  let confidence = 'low';
-  if (matchedFoods >= 3) {
-    confidence = 'high';
-  } else if (matchedFoods >= 1) {
-    confidence = 'medium';
-  }
+  // Deduplicate items
+  const uniqueItems = deduplicateItems(parsedItems);
 
-  // Add generic tips if no specific tips found
-  if (tips.size === 0 && totalCalories > 0) {
-    if (normalizedText.includes('oil') || normalizedText.includes('butter') || normalizedText.includes('fried')) {
-      tips.add('Cooking oils and butter add calories quickly - 1 tbsp oil = 120 cal.');
-    }
-    if (normalizedText.includes('cheese')) {
-      tips.add('Cheese is calorie-dense - 1 oz = about 110 calories.');
-    }
+  // Calculate total
+  const totalCalories = uniqueItems.reduce((sum, item) => sum + item.calories, 0);
+
+  // Determine confidence
+  let confidence = 'low';
+  if (uniqueItems.length >= 3) {
+    confidence = 'high';
+  } else if (uniqueItems.length >= 1) {
+    confidence = 'medium';
   }
 
   return {
     totalCalories,
-    breakdown,
+    items: uniqueItems,
     tips: Array.from(tips),
     confidence,
-    matchedFoods,
+    matchedFoods: uniqueItems.length,
   };
 }
 
 /**
- * Check if a food description contains vague quantities that could use clarification
- * @param {string} text - The food description
- * @returns {Object|null} - { item, question, options } or null if no clarification needed
+ * Check if a food description contains vague quantities
  */
 export function needsClarification(text) {
   if (!text || typeof text !== 'string') return null;
@@ -265,8 +521,7 @@ export function needsClarification(text) {
   const vaguePatterns = [
     {
       pattern: /handful\s+(?:of\s+)?(\w+)/i,
-      item: 'handful',
-      question: (match) => `You mentioned "a handful of ${match}" - roughly how much would you estimate that is?`,
+      question: (match) => `You mentioned "a handful of ${match}" - roughly how much?`,
       options: [
         { label: 'Small (about 0.5 oz)', multiplier: 0.5 },
         { label: 'Medium (about 1 oz)', multiplier: 1 },
@@ -274,8 +529,7 @@ export function needsClarification(text) {
       ],
     },
     {
-      pattern: /(?:some|a\s+few|a\s+bit\s+of|a\s+little)\s+(\w+)/i,
-      item: 'some',
+      pattern: /(?:some|a\s+bit\s+of|a\s+little)\s+(\w+)/i,
       question: (match) => `You mentioned "some ${match}" - roughly how much?`,
       options: [
         { label: 'Small portion', multiplier: 0.5 },
@@ -283,33 +537,12 @@ export function needsClarification(text) {
         { label: 'Large portion', multiplier: 1.5 },
       ],
     },
-    {
-      pattern: /(?:glass|cup)\s+(?:of\s+)?(\w+)/i,
-      item: 'glass',
-      question: (match) => `How big was the glass/cup of ${match}?`,
-      options: [
-        { label: 'Small (6-8 oz)', multiplier: 0.75 },
-        { label: 'Medium (10-12 oz)', multiplier: 1 },
-        { label: 'Large (16+ oz)', multiplier: 1.5 },
-      ],
-    },
-    {
-      pattern: /scoop\s+(?:of\s+)?(\w+)/i,
-      item: 'scoop',
-      question: (match) => `What size scoop of ${match}?`,
-      options: [
-        { label: 'Small scoop', multiplier: 0.7 },
-        { label: 'Standard scoop', multiplier: 1 },
-        { label: 'Heaping scoop', multiplier: 1.3 },
-      ],
-    },
   ];
 
-  for (const { pattern, item, question, options } of vaguePatterns) {
+  for (const { pattern, question, options } of vaguePatterns) {
     const match = normalizedText.match(pattern);
     if (match && match[1]) {
       return {
-        item,
         matchedFood: match[1],
         question: question(match[1]),
         options,
@@ -322,15 +555,11 @@ export function needsClarification(text) {
 
 /**
  * Get educational tip for a food category
- * @param {string} category - Food category
- * @returns {string|null}
  */
 export function getEducationalTip(category) {
   const tips = {
     nuts: 'Nuts are nutrient-dense but calorie-dense too! A small handful (1 oz) of almonds has about 165 calories.',
     condiment: 'Condiments and oils can add up quickly. Measure your portions to stay on track.',
-    dessert: 'Enjoying dessert in moderation is part of a balanced lifestyle. Savor it mindfully!',
-    beverage: 'Liquid calories are easy to overlook. Water is always the best choice for hydration.',
     protein: 'Protein helps with satiety and muscle recovery. Aim for a palm-sized portion per meal.',
   };
 

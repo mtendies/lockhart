@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
-import { Target, Compass, Calendar, Lightbulb, ChevronDown, ChevronUp, RefreshCw, Sparkles, Dumbbell, Moon, Utensils, Footprints, Brain, Loader2, AlertCircle, Check, X, Scale, Droplets, Send, History, Clock, Edit2 } from 'lucide-react';
+import { Target, Compass, Calendar, Lightbulb, ChevronDown, ChevronUp, RefreshCw, Sparkles, Dumbbell, Moon, Utensils, Footprints, Brain, Loader2, AlertCircle, Check, X, Scale, Droplets, Send, History, Clock, Edit2, Trash2 } from 'lucide-react';
 import { getRecentCheckIns, formatWeekOf } from '../checkInStore';
 import { savePlaybook, applyPlaybookSuggestion, getPlaybook } from '../playbookStore';
 import { getPendingBySection, approveSuggestion, dismissSuggestion } from '../playbookSuggestionsStore';
 import { getWeeklyFocusProgress, setCustomTarget } from '../weeklyProgressStore';
-import { logActivity, getActivities, ACTIVITY_SOURCES } from '../activityLogStore';
+import { logActivity, getActivities, deleteActivity, ACTIVITY_SOURCES } from '../activityLogStore';
+import DeleteConfirmationModal from './DeleteConfirmationModal';
 import {
   isInCalibrationPeriod,
   isCalibrationComplete,
@@ -151,6 +152,8 @@ export default function Playbook({ profile, playbook, onSuggestionCountChange, o
   const [editingFocusIndex, setEditingFocusIndex] = useState(null); // Index of focus item being edited
   const [editingFocusText, setEditingFocusText] = useState('');
   const [targetDropdownIndex, setTargetDropdownIndex] = useState(null); // Index of focus item showing target dropdown
+  const [deleteTarget, setDeleteTarget] = useState(null); // Activity to be deleted
+  const [focusRefreshKey, setFocusRefreshKey] = useState(0); // Key to trigger focus progress refresh
   const editInputRef = useRef(null);
 
   // Focus edit input when editing starts
@@ -397,8 +400,24 @@ export default function Playbook({ profile, playbook, onSuggestionCountChange, o
   // Check if user is in calibration period
   const showCalibration = isInCalibrationPeriod() && !isCalibrationComplete();
 
-  // Get focus progress
+  // Get focus progress (refreshes when focusRefreshKey changes)
   const focusProgress = playbook ? getWeeklyFocusProgress() : [];
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const refreshedFocusProgress = focusRefreshKey >= 0 ? focusProgress : focusProgress;
+
+  // Handle activity entry deletion
+  function handleDeleteEntry(activity) {
+    setDeleteTarget(activity);
+  }
+
+  function confirmDeleteEntry() {
+    if (deleteTarget) {
+      deleteActivity(deleteTarget.id);
+      setDeleteTarget(null);
+      setFocusRefreshKey(k => k + 1);
+      onActivityLogged?.(); // Notify parent to refresh
+    }
+  }
 
   // Sort focus progress: incomplete items first, completed at bottom
   const sortedFocusProgress = [...focusProgress].sort((a, b) => {
@@ -753,12 +772,22 @@ export default function Playbook({ profile, playbook, onSuggestionCountChange, o
                             <div className="mt-2 p-2 bg-white rounded-lg border border-emerald-200 space-y-1">
                               <p className="text-[10px] font-medium text-gray-500 mb-1">Entries:</p>
                               {progress.contributingActivities.map((activity, ai) => (
-                                <div key={activity.id || ai} className="flex items-center gap-1.5 text-[11px] text-gray-700">
+                                <div key={activity.id || ai} className="flex items-center gap-1.5 text-[11px] text-gray-700 group/entry">
                                   <Clock size={10} className="text-gray-400 shrink-0" />
                                   <span className="flex-1 truncate">{activity.summary || activity.rawText}</span>
                                   <span className="text-gray-400 text-[10px]">
                                     {new Date(activity.timestamp).toLocaleDateString(undefined, { weekday: 'short' })}
                                   </span>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleDeleteEntry(activity);
+                                    }}
+                                    className="p-0.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded opacity-0 group-hover/entry:opacity-100 transition-opacity"
+                                    title="Delete entry"
+                                  >
+                                    <Trash2 size={10} />
+                                  </button>
                                 </div>
                               ))}
                             </div>
@@ -1173,6 +1202,16 @@ export default function Playbook({ profile, playbook, onSuggestionCountChange, o
           </p>
         </div>
       </div>
+
+      {/* Delete Entry Confirmation Modal */}
+      {deleteTarget && (
+        <DeleteConfirmationModal
+          title="Delete this entry?"
+          itemSummary={deleteTarget.summary || deleteTarget.rawText}
+          onConfirm={confirmDeleteEntry}
+          onCancel={() => setDeleteTarget(null)}
+        />
+      )}
     </div>
   );
 }

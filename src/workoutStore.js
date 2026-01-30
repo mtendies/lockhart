@@ -5,7 +5,7 @@
  */
 
 import { getItem, setItem } from './storageHelper';
-import { getActivities, logActivity, ACTIVITY_TYPES, WORKOUT_TYPES, getWeekOf } from './activityLogStore';
+import { getActivities, logActivity, deleteActivity, ACTIVITY_TYPES, WORKOUT_TYPES, getWeekOf } from './activityLogStore';
 
 const WORKOUTS_KEY = 'health-advisor-workouts';
 const TRACKED_METRICS_KEY = 'health-advisor-tracked-metrics';
@@ -196,10 +196,22 @@ export function getWorkoutsThisWeek() {
 
 /**
  * Delete a workout
+ * Also deletes linked activity from activity log
  */
 export function deleteWorkout(id) {
   const workouts = getWorkouts().filter(w => w.id !== id);
   saveWorkouts(workouts);
+
+  // Also delete from activity log if there's a linked activity
+  // The activity may have workoutId in its data, or the activity ID may match
+  const activities = getActivities();
+  const linkedActivity = activities.find(a =>
+    a.data?.workoutId === id || a.id === id
+  );
+  if (linkedActivity) {
+    deleteActivity(linkedActivity.id);
+  }
+
   return workouts;
 }
 
@@ -445,8 +457,20 @@ export function parseQuickEntry(text) {
     }
 
     // Generic strength keywords
-    if (!workout.exercise && (lower.includes('lift') || lower.includes('weight') || lower.includes('strength'))) {
+    if (!workout.exercise && (lower.includes('lift') || lower.includes('weight') || lower.includes('strength') ||
+        lower.includes('circuit') || lower.includes('pulldown') || lower.includes('curl') ||
+        lower.includes('row') || lower.includes('press') || lower.includes('dumbbell') ||
+        lower.includes('barbell') || lower.includes('kettlebell'))) {
       workout.type = TRAINING_TYPES.STRENGTH;
+
+      // Try to determine specific exercise type
+      if (lower.includes('back')) workout.exercise = 'Back workout';
+      else if (lower.includes('chest')) workout.exercise = 'Chest workout';
+      else if (lower.includes('leg')) workout.exercise = 'Leg workout';
+      else if (lower.includes('arm') || lower.includes('bicep') || lower.includes('tricep')) workout.exercise = 'Arm workout';
+      else if (lower.includes('shoulder')) workout.exercise = 'Shoulder workout';
+      else if (lower.includes('circuit')) workout.exercise = 'Circuit training';
+      else workout.exercise = 'Strength training';
     }
   }
 

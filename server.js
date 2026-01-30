@@ -25,7 +25,7 @@ if (apiKeyConfigured) {
   console.log(`API Key starts with: ${process.env.ANTHROPIC_API_KEY.substring(0, 15)}...`);
 }
 
-function buildSystemPrompt(profile, notes, checkIns, playbook, pendingSuggestions, groceryData, activityLogs, nutritionProfile, nutritionCalibration, learnedInsights) {
+function buildSystemPrompt(profile, notes, checkIns, playbook, pendingSuggestions, groceryData, activityLogs, nutritionProfile, nutritionCalibration, learnedInsights, todaysNutrition) {
   const sections = [];
 
   sections.push(`You are a knowledgeable health and fitness advisor—think of yourself as a well-informed friend who happens to know a lot about nutrition, exercise, and wellness. You know this user well from their profile below.
@@ -622,6 +622,25 @@ confidence: explicit|inferred
     sections.push(calParts.join('\n'));
   }
 
+  // Include today's nutrition data for real-time context
+  if (todaysNutrition && (todaysNutrition.consumed > 0 || todaysNutrition.meals?.length > 0)) {
+    const nutritionParts = [];
+    nutritionParts.push("## Today's Nutrition Status");
+    nutritionParts.push(`As of now, the user has consumed approximately **${todaysNutrition.consumed} calories** today.`);
+    nutritionParts.push(`Their daily target is **${todaysNutrition.target} calories**.`);
+    nutritionParts.push(`They have approximately **${todaysNutrition.remaining} calories remaining** for the day.`);
+
+    if (todaysNutrition.meals && todaysNutrition.meals.length > 0) {
+      nutritionParts.push('\n**Today\'s meals so far:**');
+      todaysNutrition.meals.forEach(meal => {
+        nutritionParts.push(`- ${meal.time}: ${meal.content} (~${meal.calories} cal)`);
+      });
+    }
+
+    nutritionParts.push('\nUse this real-time data when answering questions about what to eat, whether to have a snack, calorie budgets, etc.');
+    sections.push(nutritionParts.join('\n'));
+  }
+
   return sections.join('\n\n');
 }
 
@@ -737,7 +756,7 @@ Try asking something specific like:
 
 app.post('/api/chat', async (req, res) => {
   const apiKey = process.env.ANTHROPIC_API_KEY;
-  const { messages, profile, notes, checkIns, playbook, pendingSuggestions, groceryData, activityLogs, nutritionProfile, nutritionCalibration, learnedInsights } = req.body;
+  const { messages, profile, notes, checkIns, playbook, pendingSuggestions, groceryData, activityLogs, nutritionProfile, nutritionCalibration, learnedInsights, todaysNutrition } = req.body;
 
   if (!messages || !Array.isArray(messages)) {
     return res.status(400).json({ error: 'messages array required' });
@@ -765,7 +784,7 @@ app.post('/api/chat', async (req, res) => {
   }
 
   const client = new Anthropic({ apiKey });
-  const systemPrompt = buildSystemPrompt(profile || {}, notes || {}, checkIns || [], playbook || null, pendingSuggestions || [], groceryData || null, activityLogs || [], nutritionProfile || null, nutritionCalibration || null, learnedInsights || []);
+  const systemPrompt = buildSystemPrompt(profile || {}, notes || {}, checkIns || [], playbook || null, pendingSuggestions || [], groceryData || null, activityLogs || [], nutritionProfile || null, nutritionCalibration || null, learnedInsights || [], todaysNutrition || null);
 
   console.log('--- API Request ---');
   console.log('Messages count:', messages.length);

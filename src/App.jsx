@@ -1,6 +1,9 @@
 import { useState, useEffect, useRef, Component } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Auth from './components/Auth';
+import PreOnboardingIntro from './components/PreOnboardingIntro';
+import FeedbackButton from './components/FeedbackButton';
+import AdminFeedback from './components/AdminFeedback';
 import * as dataService from './lib/dataService';
 
 // Error boundary to catch and display React errors
@@ -95,13 +98,24 @@ function AppContent() {
   const [showCheckInModal, setShowCheckInModal] = useState(false);
   const previousProfileRef = useRef(null);
 
-  // Global keyboard shortcut for Dev Tools (Ctrl+Shift+D)
+  // Check for admin feedback URL on load
+  useEffect(() => {
+    if (window.location.pathname === '/admin/feedback' || window.location.hash === '#admin-feedback') {
+      setView('admin-feedback');
+    }
+  }, []);
+
+  // Global keyboard shortcut for Dev Tools (Ctrl+Shift+D) and Admin (Ctrl+Shift+A)
   useEffect(() => {
     function handleKeyDown(e) {
       if (e.ctrlKey && e.shiftKey && e.key === 'D') {
         e.preventDefault();
         console.log('App.jsx: Ctrl+Shift+D pressed, toggling DevTools');
         setShowDevTools(prev => !prev);
+      }
+      if (e.ctrlKey && e.shiftKey && e.key === 'A') {
+        e.preventDefault();
+        setView('admin-feedback');
       }
     }
     window.addEventListener('keydown', handleKeyDown);
@@ -276,7 +290,7 @@ function AppContent() {
 
   const [navigateSection, setNavigateSection] = useState(null);
 
-  function handleNavigate(target, section = null, question = null) {
+  function handleNavigate(target, section = null, question = null, createNewChat = false) {
     // Map old view names to new ones
     const viewMap = {
       'dashboard': 'home',
@@ -291,8 +305,9 @@ function AppContent() {
     setView(newView);
 
     // Set initial question if provided (e.g., from quick entry on Home)
+    // Include createNewChat flag to signal Chat component to create new chat
     if (question) {
-      setInitialQuestion(question);
+      setInitialQuestion({ text: question, createNewChat });
     } else if (newView !== 'advisor') {
       setInitialQuestion(null);
     }
@@ -308,8 +323,8 @@ function AppContent() {
     setView('advisor');
   }
 
-  function handleAskQuestion(question) {
-    setInitialQuestion(question);
+  function handleAskQuestion(question, createNewChat = false) {
+    setInitialQuestion({ text: question, createNewChat });
     setView('advisor');
   }
 
@@ -410,6 +425,8 @@ function AppContent() {
         />
         {/* Dev Tools available even during onboarding */}
         <DevTools />
+        {/* Feedback button during onboarding */}
+        <FeedbackButton currentPage="onboarding" />
       </>
     );
   }
@@ -528,11 +545,22 @@ function AppContent() {
             </div>
           )}
 
+          {view === 'admin-feedback' && (
+            <div className="flex-1 overflow-y-auto">
+              <AdminFeedback onBack={() => setView('home')} />
+            </div>
+          )}
+
           {/* Check-in is now a modal overlay, not a view */}
         </div>
 
-        {/* Bottom Navigation */}
-        <BottomNav currentView={view} onNavigate={handleNavigate} />
+        {/* Bottom Navigation - hide on admin page */}
+        {view !== 'admin-feedback' && (
+          <BottomNav currentView={view} onNavigate={handleNavigate} />
+        )}
+
+        {/* Global Feedback Button */}
+        <FeedbackButton currentPage={view} />
 
         {/* Insight Notifications */}
         <InsightNotificationContainer
@@ -600,6 +628,10 @@ function App() {
 // Handles auth state and shows appropriate component
 function AuthenticatedApp() {
   const { user, loading: authLoading } = useAuth();
+  const [showIntro, setShowIntro] = useState(() => {
+    // Check if user has seen the intro
+    return !localStorage.getItem('health-advisor-intro-seen');
+  });
 
   // Show loading spinner while checking auth
   if (authLoading) {
@@ -613,6 +645,16 @@ function AuthenticatedApp() {
     );
   }
 
+  // Show pre-onboarding intro for first-time visitors (before auth)
+  if (showIntro && !user) {
+    return (
+      <>
+        <PreOnboardingIntro onComplete={() => setShowIntro(false)} />
+        <FeedbackButton currentPage="intro" />
+      </>
+    );
+  }
+
   // Show auth screen if not logged in
   if (!user) {
     return (
@@ -620,6 +662,7 @@ function AuthenticatedApp() {
         <Auth />
         {/* DevTools available on auth screen for importing legacy data */}
         <DevTools />
+        <FeedbackButton currentPage="auth" />
       </>
     );
   }

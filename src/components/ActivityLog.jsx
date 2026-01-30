@@ -23,6 +23,7 @@ import {
   WORKOUT_TYPES,
   ACTIVITY_SOURCES,
 } from '../activityLogStore';
+import DeleteConfirmationModal from './DeleteConfirmationModal';
 
 // Category display config
 // Sleep is displayed as "Recovery" with purple colors to match chat categories
@@ -93,6 +94,7 @@ export default function ActivityLog({ onActivityDeleted, onClose, compact = fals
   const [endDate, setEndDate] = useState('');
   const [expandedId, setExpandedId] = useState(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [deleteTarget, setDeleteTarget] = useState(null);
 
   const activities = useMemo(() => {
     return getFilteredActivities({
@@ -104,10 +106,17 @@ export default function ActivityLog({ onActivityDeleted, onClose, compact = fals
     });
   }, [searchQuery, typeFilter, sourceFilter, startDate, endDate, refreshKey]);
 
-  function handleDelete(id) {
-    deleteActivity(id);
-    setRefreshKey(k => k + 1);
-    onActivityDeleted?.();
+  function handleDeleteClick(activity) {
+    setDeleteTarget(activity);
+  }
+
+  function confirmDelete() {
+    if (deleteTarget) {
+      deleteActivity(deleteTarget.id);
+      setRefreshKey(k => k + 1);
+      setDeleteTarget(null);
+      onActivityDeleted?.();
+    }
   }
 
   function clearFilters() {
@@ -379,7 +388,7 @@ export default function ActivityLog({ onActivityDeleted, onClose, compact = fals
                           )}
                         </div>
                         <button
-                          onClick={() => handleDelete(activity.id)}
+                          onClick={() => handleDeleteClick(activity)}
                           className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-white rounded-lg transition-colors"
                           title="Delete activity"
                         >
@@ -394,6 +403,16 @@ export default function ActivityLog({ onActivityDeleted, onClose, compact = fals
           ))
         )}
       </div>
+
+      {/* Delete Confirmation Modal */}
+      {deleteTarget && (
+        <DeleteConfirmationModal
+          title="Delete this entry?"
+          itemSummary={deleteTarget.summary || deleteTarget.rawText}
+          onConfirm={confirmDelete}
+          onCancel={() => setDeleteTarget(null)}
+        />
+      )}
     </div>
   );
 }

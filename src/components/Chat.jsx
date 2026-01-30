@@ -4,12 +4,14 @@ import { extractNotes, stripNotes } from '../noteParser';
 import { addNote, getNotes } from '../notesStore';
 import { addBookmark } from '../bookmarkStore';
 import { assignCategory } from '../categoryUtils';
+import { logActivity, getFilteredActivities, ACTIVITY_TYPES, ACTIVITY_SOURCES, WORKOUT_TYPES } from '../activityLogStore';
+import { estimateCalories } from '../calorieEstimator';
 import { parseCitations, formatText, HIGHLIGHT_CATEGORIES } from '../citationParser';
 import { parsePlaybookSuggestion } from '../playbookSuggestionParser';
 import { addSuggestion, approveSuggestion, dismissSuggestion, getPendingSuggestions } from '../playbookSuggestionsStore';
 import { applyPlaybookSuggestion } from '../playbookStore';
 import { getRecentCheckIns } from '../checkInStore';
-import { getNutritionProfile, isCalibrationComplete, getCalibrationProgress } from '../nutritionCalibrationStore';
+import { getNutritionProfile, isCalibrationComplete, getCalibrationProgress, getCalibrationData, getTodayDayKey } from '../nutritionCalibrationStore';
 import { parseLearnedInsights, stripInsightBlocks } from '../learnedInsightParser';
 import { addLearnedInsight, getLearnedInsights } from '../learnedInsightsStore';
 import {
@@ -71,6 +73,8 @@ export default function Chat({
   const [highlightTooltip, setHighlightTooltip] = useState(null);
   const [pendingSuggestions, setPendingSuggestions] = useState({});
   const [approvedSuggestions, setApprovedSuggestions] = useState({});
+  // Track streaming response - don't show until complete
+  const [streamingResponse, setStreamingResponse] = useState('');
 
   // Quippy thinking messages
   const thinkingMessages = {
@@ -145,6 +149,77 @@ export default function Chat({
     }, 2500);
 
     return interval;
+  }
+
+  // Get today's nutrition data for advisor context
+  function getTodaysNutritionContext() {
+    let totalCalories = 0;
+    const meals = [];
+
+    // First, try to get data from calibration store (today's meals)
+    const todayKey = getTodayDayKey();
+    const calibrationData = getCalibrationData();
+
+    if (calibrationData?.days?.[todayKey]?.meals) {
+      for (const meal of calibrationData.days[todayKey].meals) {
+        if (meal.content && meal.content.trim()) {
+          const estimate = estimateCalories(meal.content);
+          totalCalories += estimate.totalCalories;
+          meals.push({
+            time: meal.label || meal.type,
+            content: meal.content,
+            calories: estimate.totalCalories,
+          });
+        }
+      }
+    }
+
+    // Also check activity log for today's nutrition entries
+    const today = new Date().toISOString().split('T')[0];
+    const todaysActivities = getFilteredActivities({
+      type: ACTIVITY_TYPES.NUTRITION,
+      startDate: today,
+      endDate: today,
+    });
+
+    for (const activity of todaysActivities) {
+      const rawText = activity.rawText || activity.summary || '';
+      // Avoid duplicates - check if content already exists in meals
+      const isDuplicate = meals.some(m =>
+        m.content.toLowerCase().includes(rawText.toLowerCase().substring(0, 20)) ||
+        rawText.toLowerCase().includes(m.content.toLowerCase().substring(0, 20))
+      );
+      if (!isDuplicate) {
+        const estimate = estimateCalories(rawText);
+        totalCalories += estimate.totalCalories;
+        meals.push({
+          time: new Date(activity.timestamp).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
+          content: activity.summary || rawText,
+          calories: estimate.totalCalories,
+        });
+      }
+    }
+
+    // Calculate target based on profile
+    // Use profile's calorieTarget if set, otherwise calculate from goals
+    let calorieTarget = 2000; // default
+    if (profile?.calorieTarget) {
+      calorieTarget = profile.calorieTarget;
+    } else if (profile?.goals) {
+      // Simple calculation: base 2000 + adjustments
+      const hasLoseFat = profile.goals.some(g => g.includes('loss') || g.includes('fat'));
+      const hasBuildMuscle = profile.goals.some(g => g.includes('muscle') || g.includes('gain'));
+      if (hasLoseFat) calorieTarget = 1800;
+      else if (hasBuildMuscle) calorieTarget = 2500;
+    }
+
+    return {
+      consumed: totalCalories,
+      target: calorieTarget,
+      remaining: Math.max(0, calorieTarget - totalCalories),
+      meals,
+      mealCount: meals.length,
+    };
   }
 
   // Table of Contents state
@@ -395,17 +470,243 @@ export default function Chat({
     setHighlightTooltip(null);
   }
 
-  // Handle initial question from Dashboard
+  // Handle initial question from Dashboard/Quick Entry
   useEffect(() => {
     if (initialQuestion && !loading) {
-      sendMessage(initialQuestion);
+      // Handle both old string format and new object format
+      const questionText = typeof initialQuestion === 'string'
+        ? initialQuestion
+        : initialQuestion.text;
+      const shouldCreateNewChat = typeof initialQuestion === 'object'
+        ? initialQuestion.createNewChat
+        : false;
+
+      // If createNewChat is true, create a new chat with smart title first
+      if (shouldCreateNewChat && questionText) {
+        const newChat = createChat(questionText);
+        setCurrentChatId(newChat.id);
+        setMessages([]);
+        refreshChats();
+      }
+
+      if (questionText) {
+        sendMessage(questionText);
+      }
       onInitialQuestionClear?.();
     }
   }, [initialQuestion]);
 
+  // Detect user intent - questions should not auto-log
+  function detectIntentForChat(text) {
+    const lowerText = text.toLowerCase();
+
+    // QUESTION indicators - DO NOT auto-log
+    const questionIndicators = [
+      'should i', 'can i', 'would it', 'will it', 'is it',
+      'how do', 'how does', 'how should', 'how can',
+      'what should', 'what would', 'what if',
+      'do you think', 'does it matter',
+      'not sure', 'wondering', 'curious',
+      'advice', 'recommend', 'suggestion',
+      'before my', 'after my', 'or will', 'or should',
+    ];
+
+    // LOG indicators - likely logging an activity
+    const logIndicators = [
+      'i did', 'i had', 'i ate', 'i ran', 'i went',
+      'just did', 'just had', 'just ate', 'just finished',
+      'completed', 'logged', 'tracking',
+      'for breakfast', 'for lunch', 'for dinner', 'for a snack',
+      'this morning', 'today i', 'yesterday i',
+      'weighed in', 'weighed myself', 'weight was', 'weight is',
+      'slept for', 'got hours', 'hours of sleep',
+    ];
+
+    const hasQuestionMark = lowerText.includes('?');
+    const isQuestion = questionIndicators.some(q => lowerText.includes(q)) || hasQuestionMark;
+    const isLog = logIndicators.some(l => lowerText.includes(l));
+
+    if (isQuestion && !isLog) return 'question';
+    if (isLog && !isQuestion) return 'log';
+    if (hasQuestionMark) return 'question';
+    return 'unclear';
+  }
+
+  // Detect and log activities from user message (supports MULTIPLE workouts in one entry)
+  function detectAndLogActivity(text) {
+    const lower = text.toLowerCase();
+    let activitiesLogged = 0;
+
+    // First check intent - don't auto-log questions
+    const intent = detectIntentForChat(text);
+    if (intent === 'question') {
+      // This is a question, not a log - don't auto-log anything
+      return;
+    }
+
+    // Weight/weigh-in detection (exclusive - not combined with workouts)
+    if (lower.includes('weigh') || lower.includes('scale') || lower.includes('weight check')) {
+      const weightMatch = text.match(/(\d+(?:\.\d+)?)\s*(?:lbs?|pounds?|kg|kilos?)?/i);
+      const weight = weightMatch ? parseFloat(weightMatch[1]) : null;
+
+      logActivity({
+        type: ACTIVITY_TYPES.WEIGHT,
+        source: ACTIVITY_SOURCES.CHAT,
+        rawText: text,
+        summary: weight ? `Weighed in at ${weight} lbs` : 'Weight check',
+        data: { weight },
+      });
+      onActivityLogged?.();
+      return;
+    }
+
+    // Sleep detection (exclusive)
+    if (lower.includes('slept') || lower.includes('sleep') || lower.includes('hours of rest')) {
+      const hoursMatch = text.match(/(\d+(?:\.\d+)?)\s*(?:hours?|hrs?)/i);
+      logActivity({
+        type: ACTIVITY_TYPES.SLEEP,
+        source: ACTIVITY_SOURCES.CHAT,
+        rawText: text,
+        summary: hoursMatch ? `${hoursMatch[1]} hours of sleep` : 'Sleep logged',
+        data: { hours: hoursMatch ? parseFloat(hoursMatch[1]) : null },
+      });
+      onActivityLogged?.();
+      return;
+    }
+
+    // Split text into segments for multi-workout detection
+    // "Ran two miles and did back workout" -> ["Ran two miles", "did back workout"]
+    const segments = text.split(/\band\b|\bthen\b|,|;/i).map(s => s.trim()).filter(s => s.length > 0);
+
+    // Process each segment for workouts
+    for (const segment of segments) {
+      const segLower = segment.toLowerCase();
+
+      // Running detection
+      if (segLower.includes('ran') || segLower.includes('run ') || segLower.includes('running') ||
+          segLower.includes('jog') || (segLower.includes('mile') && !segLower.includes('walk'))) {
+        const distanceMatch = segment.match(/(\d+(?:\.\d+)?)\s*(?:miles?|mi)\b/i) ||
+                              text.match(/(\d+(?:\.\d+)?)\s*(?:miles?|mi)\b/i); // Fall back to full text
+        const paceMatch = segment.match(/(\d+:\d+)\s*(?:pace|\/mi|per mile)?/i) ||
+                          text.match(/(\d+:\d+)\s*(?:pace|\/mi|per mile)?/i);
+        const distance = distanceMatch ? parseFloat(distanceMatch[1]) : null;
+        const pace = paceMatch ? paceMatch[1] : null;
+
+        logActivity({
+          type: ACTIVITY_TYPES.WORKOUT,
+          subType: WORKOUT_TYPES.RUN,
+          source: ACTIVITY_SOURCES.CHAT,
+          rawText: segment,
+          summary: distance ? `Ran ${distance} miles${pace ? ` @ ${pace}` : ''}` : 'Went for a run',
+          data: { distance, pace, exercise: 'Run' },
+        });
+        activitiesLogged++;
+        continue;
+      }
+
+      // Strength/weightlifting detection
+      if (segLower.includes('lift') || segLower.includes('weights') || segLower.includes('gym') ||
+          segLower.includes('squat') || segLower.includes('bench') || segLower.includes('deadlift') ||
+          segLower.includes('circuit') || segLower.includes('pulldown') || segLower.includes('curl') ||
+          segLower.includes('row') || segLower.includes('press') || segLower.includes('pull-up') ||
+          segLower.includes('pullup') || segLower.includes('dumbbell') || segLower.includes('barbell') ||
+          segLower.includes('kettlebell')) {
+
+        // Extract duration if mentioned
+        const durationMatch = segment.match(/(\d+)\s*(?:min|mins|minutes?)\b/i) ||
+                              text.match(/(\d+)\s*(?:min|mins|minutes?)\b/i);
+        const duration = durationMatch ? parseInt(durationMatch[1]) : null;
+
+        // Try to extract exercise name/type
+        let exerciseName = 'Strength training';
+        if (segLower.includes('back')) exerciseName = 'Back workout';
+        else if (segLower.includes('chest')) exerciseName = 'Chest workout';
+        else if (segLower.includes('leg')) exerciseName = 'Leg workout';
+        else if (segLower.includes('arm') || segLower.includes('bicep') || segLower.includes('tricep')) exerciseName = 'Arm workout';
+        else if (segLower.includes('shoulder')) exerciseName = 'Shoulder workout';
+        else if (segLower.includes('circuit')) exerciseName = 'Circuit training';
+
+        logActivity({
+          type: ACTIVITY_TYPES.WORKOUT,
+          subType: WORKOUT_TYPES.STRENGTH,
+          source: ACTIVITY_SOURCES.CHAT,
+          rawText: segment,
+          summary: duration ? `${exerciseName} (${duration} min)` : exerciseName,
+          data: { duration, exercise: exerciseName },
+        });
+        activitiesLogged++;
+        continue;
+      }
+
+      // Yoga detection
+      if (segLower.includes('yoga') || segLower.includes('stretch')) {
+        const durationMatch = segment.match(/(\d+)\s*(?:min|mins|minutes?)\b/i);
+        const duration = durationMatch ? parseInt(durationMatch[1]) : null;
+
+        logActivity({
+          type: ACTIVITY_TYPES.WORKOUT,
+          subType: WORKOUT_TYPES.YOGA,
+          source: ACTIVITY_SOURCES.CHAT,
+          rawText: segment,
+          summary: duration ? `Yoga (${duration} min)` : 'Yoga session',
+          data: { duration, exercise: 'Yoga' },
+        });
+        activitiesLogged++;
+        continue;
+      }
+
+      // Walking detection
+      if (segLower.includes('walk') || segLower.includes('walked') || segLower.includes('steps')) {
+        const distanceMatch = segment.match(/(\d+(?:\.\d+)?)\s*(?:miles?|mi|km|k)\b/i);
+        const stepsMatch = segment.match(/(\d{3,})\s*steps?/i);
+
+        logActivity({
+          type: ACTIVITY_TYPES.WORKOUT,
+          subType: WORKOUT_TYPES.WALK,
+          source: ACTIVITY_SOURCES.CHAT,
+          rawText: segment,
+          summary: stepsMatch ? `${stepsMatch[1]} steps` : (distanceMatch ? `Walked ${distanceMatch[1]} miles` : 'Went for a walk'),
+          data: {
+            distance: distanceMatch ? parseFloat(distanceMatch[1]) : null,
+            steps: stepsMatch ? parseInt(stepsMatch[1]) : null,
+            exercise: 'Walk',
+          },
+        });
+        activitiesLogged++;
+        continue;
+      }
+
+      // General workout detection (only if no specific workout found in this segment)
+      if (segLower.includes('workout') || segLower.includes('exercise') ||
+          segLower.includes('cardio') || segLower.includes('hiit')) {
+        const durationMatch = segment.match(/(\d+)\s*(?:min|mins|minutes?)\b/i);
+        const duration = durationMatch ? parseInt(durationMatch[1]) : null;
+
+        logActivity({
+          type: ACTIVITY_TYPES.WORKOUT,
+          subType: WORKOUT_TYPES.OTHER,
+          source: ACTIVITY_SOURCES.CHAT,
+          rawText: segment,
+          summary: duration ? `Workout (${duration} min)` : 'Workout completed',
+          data: { duration, exercise: 'Workout' },
+        });
+        activitiesLogged++;
+        continue;
+      }
+    }
+
+    // If we logged any activities, notify
+    if (activitiesLogged > 0) {
+      onActivityLogged?.();
+    }
+  }
+
   // Send message
   async function sendMessage(text) {
     if (!text || loading) return;
+
+    // Detect and log activity from user message
+    detectAndLogActivity(text);
 
     const userMessage = { role: 'user', content: text };
     const updated = [...messages, userMessage];
@@ -426,6 +727,9 @@ export default function Chat({
     const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout
 
     try {
+      // Get today's nutrition context for advisor
+      const todaysNutrition = getTodaysNutritionContext();
+
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -442,6 +746,7 @@ export default function Chat({
           nutritionProfile: isCalibrationComplete() ? getNutritionProfile() : null,
           nutritionCalibration: !isCalibrationComplete() ? getCalibrationProgress() : null,
           learnedInsights: getLearnedInsights(),
+          todaysNutrition, // Include today's calorie data
         }),
       });
 
@@ -465,10 +770,10 @@ export default function Chat({
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let assistantText = '';
-      let streamingMessages = updated; // Track current state for error recovery
 
-      const withAssistant = [...updated, { role: 'assistant', content: '' }];
-      updateMessages(withAssistant);
+      // Don't show partial response - only show thinking animation
+      // Messages stay as just the user messages until streaming is complete
+      setStreamingResponse('');
 
       try {
         while (true) {
@@ -488,8 +793,8 @@ export default function Chat({
               if (parsed.error) throw new Error(parsed.error);
               if (parsed.text) {
                 assistantText += parsed.text;
-                streamingMessages = [...updated, { role: 'assistant', content: assistantText }];
-                setMessages(streamingMessages);
+                // Accumulate but don't display until complete
+                setStreamingResponse(assistantText);
               }
             } catch (parseErr) {
               if (parseErr.message !== 'Unexpected end of JSON input') {
@@ -562,6 +867,7 @@ export default function Chat({
     } finally {
       setLoading(false);
       setThinkingMessage('');
+      setStreamingResponse(''); // Clear streaming state
       if (thinkingIntervalRef.current) {
         clearInterval(thinkingIntervalRef.current);
         thinkingIntervalRef.current = null;
