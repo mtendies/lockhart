@@ -35,6 +35,18 @@ body {
   margin: 0;
 }
 
+/* Prevent iOS zoom on input focus - inputs must be 16px+ */
+@media screen and (max-width: 768px) {
+  input, textarea, select {
+    font-size: 16px !important;
+  }
+}
+
+/* Mobile-safe bottom padding for chat input */
+.chat-input-container {
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+
 @keyframes slide-down {
   from {
     opacity: 0;

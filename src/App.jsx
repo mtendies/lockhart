@@ -52,7 +52,7 @@ import { initializeProfiles } from './profileStore';
 import { getPendingCount, getPendingSuggestions, addSuggestion, dismissSuggestion } from './playbookSuggestionsStore';
 import { getPlaybook, savePlaybook } from './playbookStore';
 import { analyzeProfileChange } from './profileChangeDetector';
-import { shouldShowSundayReminder, dismissReminderTemporarily } from './checkInStore';
+import { shouldShowSundayReminder, dismissReminderTemporarily, getDismissCount, skipThisWeek } from './checkInStore';
 import { getGroceryData } from './groceryStore';
 import { getActivitiesThisWeek } from './activityLogStore';
 
@@ -123,6 +123,7 @@ function AppContent() {
   const [showProfileSwitcher, setShowProfileSwitcher] = useState(false);
   const [showDevTools, setShowDevTools] = useState(false);
   const [showCheckInModal, setShowCheckInModal] = useState(false);
+  const [showFeedback, setShowFeedback] = useState(false);
   const previousProfileRef = useRef(null);
 
   // Check for admin feedback URL on load
@@ -376,6 +377,11 @@ function AppContent() {
     setShowSundayReminder(false);
   }
 
+  function handleSundayReminderSkip() {
+    skipThisWeek();
+    setShowSundayReminder(false);
+  }
+
   function handleSundayReminderCheckIn() {
     setShowSundayReminder(false);
     setShowCheckInModal(true);
@@ -500,6 +506,7 @@ function AppContent() {
             setShowDevTools(true);
           }}
           onShowTutorial={handleShowTutorial}
+          onOpenFeedback={() => setShowFeedback(true)}
         />
 
         {/* Notification Toast */}
@@ -616,7 +623,11 @@ function AppContent() {
         )}
 
         {/* Global Feedback Button */}
-        <FeedbackButton currentPage={view} />
+        <FeedbackButton
+          currentPage={view}
+          isOpenExternal={showFeedback}
+          onClose={() => setShowFeedback(false)}
+        />
 
         {/* Insight Notifications */}
         <InsightNotificationContainer
@@ -630,6 +641,8 @@ function AppContent() {
           <SundayReminderModal
             onCheckIn={handleSundayReminderCheckIn}
             onDismiss={handleSundayReminderDismiss}
+            onSkipWeek={handleSundayReminderSkip}
+            dismissCount={getDismissCount()}
           />
         )}
 

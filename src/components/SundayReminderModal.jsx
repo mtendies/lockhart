@@ -1,8 +1,11 @@
-import { ClipboardCheck, Clock } from 'lucide-react';
+import { ClipboardCheck, Clock, X } from 'lucide-react';
 
-export default function SundayReminderModal({ onCheckIn, onDismiss }) {
+export default function SundayReminderModal({ onCheckIn, onDismiss, onSkipWeek, dismissCount = 0 }) {
   // Cannot be dismissed by clicking outside or pressing Escape
   // User must choose an action
+  // After 2+ dismissals, show option to skip for the week
+
+  const showSkipOption = dismissCount >= 2;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -50,6 +53,16 @@ export default function SundayReminderModal({ onCheckIn, onDismiss }) {
               Let's Do It
             </button>
           </div>
+
+          {/* Skip option appears after 2+ dismissals */}
+          {showSkipOption && onSkipWeek && (
+            <button
+              onClick={onSkipWeek}
+              className="mt-4 w-full py-2 text-sm text-gray-500 hover:text-gray-700 transition-colors"
+            >
+              Skip this week's check-in
+            </button>
+          )}
         </div>
       </div>
     </div>

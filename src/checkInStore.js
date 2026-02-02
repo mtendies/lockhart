@@ -48,8 +48,14 @@ export function shouldShowSundayReminder() {
 
   if (!checkInMissing) return false;
 
-  // Check if user dismissed the reminder recently
+  // Check if user skipped check-in for this week
   const reminderData = getReminderData();
+  const currentWeek = getWeekStart(new Date());
+  if (reminderData?.weekOf === currentWeek && reminderData?.skippedForWeek) {
+    return false; // Skipped for this week
+  }
+
+  // Check if user dismissed the reminder recently
   if (reminderData?.dismissedUntil) {
     const dismissedUntil = new Date(reminderData.dismissedUntil);
     if (today < dismissedUntil) return false; // Still dismissed
@@ -70,11 +76,48 @@ function getReminderData() {
 
 // Dismiss the reminder for a few hours
 export function dismissReminderTemporarily(hours = 3) {
+  const existing = getReminderData() || {};
+  const currentWeek = getWeekStart(new Date());
+
+  // Reset count if it's a new week
+  const dismissCount = existing.weekOf === currentWeek
+    ? (existing.dismissCount || 0) + 1
+    : 1;
+
   const dismissedUntil = new Date();
   dismissedUntil.setHours(dismissedUntil.getHours() + hours);
+
   setItem(REMINDER_KEY, JSON.stringify({
     dismissedUntil: dismissedUntil.toISOString(),
+    weekOf: currentWeek,
+    dismissCount,
   }));
+}
+
+// Get the dismiss count for current week
+export function getDismissCount() {
+  const data = getReminderData();
+  const currentWeek = getWeekStart(new Date());
+  if (data?.weekOf === currentWeek) {
+    return data.dismissCount || 0;
+  }
+  return 0;
+}
+
+// Skip check-in for this entire week
+export function skipThisWeek() {
+  const currentWeek = getWeekStart(new Date());
+  setItem(REMINDER_KEY, JSON.stringify({
+    weekOf: currentWeek,
+    skippedForWeek: true,
+  }));
+}
+
+// Check if check-in is skipped for this week
+export function isSkippedForWeek() {
+  const data = getReminderData();
+  const currentWeek = getWeekStart(new Date());
+  return data?.weekOf === currentWeek && data?.skippedForWeek === true;
 }
 
 // Clear reminder state (e.g., when a new week starts)

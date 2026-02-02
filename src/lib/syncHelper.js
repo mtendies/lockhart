@@ -159,6 +159,16 @@ export function syncNutritionCalibration(calibrationData) {
   processSyncQueue();
 }
 
+// Sync grocery data to Supabase
+export function syncGrocery(groceryData) {
+  syncQueue.push({
+    type: 'grocery',
+    data: groceryData,
+    syncFn: dataService.upsertGroceryData,
+  });
+  processSyncQueue();
+}
+
 // Delete activity from Supabase
 export async function deleteActivityFromSupabase(activityId) {
   const userId = await getCurrentUserId();
@@ -207,6 +217,7 @@ export default {
   syncCheckin,
   syncNutritionDay,
   syncNutritionCalibration,
+  syncGrocery,
   deleteActivityFromSupabase,
   deleteConversationFromSupabase,
   deleteInsightFromSupabase,

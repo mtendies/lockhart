@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { MessageCircle, X, Send, CheckCircle, Loader2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
@@ -23,14 +23,19 @@ const PAGE_NAMES = {
   'intro': 'Introduction',
 };
 
-export default function FeedbackButton({ currentPage = 'home' }) {
+export default function FeedbackButton({ currentPage = 'home', isOpenExternal = false, onClose = null }) {
   const { user } = useAuth();
-  const [isOpen, setIsOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(isOpenExternal);
   const [feedback, setFeedback] = useState('');
   const [category, setCategory] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [error, setError] = useState(null);
+
+  // Sync with external open state
+  useEffect(() => {
+    setIsOpen(isOpenExternal);
+  }, [isOpenExternal]);
 
   const pageName = PAGE_NAMES[currentPage] || currentPage;
 
@@ -85,14 +90,15 @@ export default function FeedbackButton({ currentPage = 'home' }) {
     setCategory('');
     setError(null);
     setIsSubmitted(false);
+    if (onClose) onClose();
   }
 
   return (
     <>
-      {/* Floating Feedback Button */}
+      {/* Floating Feedback Button - Hidden on mobile to avoid blocking UI */}
       <button
         onClick={() => setIsOpen(true)}
-        className="fixed bottom-20 left-4 z-40 flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-full shadow-lg hover:bg-blue-700 hover:scale-105 transition-all group"
+        className="hidden md:flex fixed bottom-20 left-4 z-40 items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-full shadow-lg hover:bg-blue-700 hover:scale-105 transition-all group"
         title="Share feedback"
       >
         <MessageCircle size={18} />

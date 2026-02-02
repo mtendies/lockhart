@@ -11,6 +11,7 @@ import {
   FlaskConical,
   LogOut,
   HelpCircle,
+  MessageCircle,
 } from 'lucide-react';
 import { getActiveProfile, getProfileColor } from '../profileStore';
 import { useAuth } from '../context/AuthContext';
@@ -22,6 +23,7 @@ export default function Header({
   onOpenProfileSwitcher,
   onOpenDevTools,
   onShowTutorial,
+  onOpenFeedback,
 }) {
   const { user, signOut } = useAuth();
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -148,6 +150,13 @@ export default function Header({
                       Help & Tutorial
                     </button>
                   )}
+                  <button
+                    onClick={() => handleMenuClick(onOpenFeedback)}
+                    className="w-full px-4 py-2.5 flex items-center gap-3 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                  >
+                    <MessageCircle size={16} className="text-gray-400" />
+                    Send Feedback
+                  </button>
                 </div>
 
                 <div className="border-t border-gray-100 py-1">

@@ -23,6 +23,7 @@ const SYNC_KEYS = {
   checkins: 'health-advisor-checkins',
   nutrition: 'health-advisor-nutrition-calibration',
   notes: 'health-advisor-notes',
+  grocery: 'health-advisor-groceries',
 };
 
 export function useSupabaseSync() {
@@ -119,6 +120,11 @@ export function useSupabaseSync() {
         safeUpdate(SYNC_KEYS.notes, results.notes, false);
       }
 
+      // Store grocery data (only if no local grocery data)
+      if (results.grocery) {
+        safeUpdate(SYNC_KEYS.grocery, results.grocery, false);
+      }
+
       if (results.errors?.length > 0) {
         setSyncErrors(results.errors);
         setSyncStatus('error');
@@ -208,6 +214,14 @@ export function useSupabaseSync() {
         }
       }
 
+      // Sync grocery data
+      const groceryData = getItem(SYNC_KEYS.grocery);
+      if (groceryData) {
+        const grocery = JSON.parse(groceryData);
+        const { error } = await dataService.upsertGroceryData(user.id, grocery);
+        if (error) errors.push({ type: 'grocery', error });
+      }
+
       if (errors.length > 0) {
         setSyncErrors(errors);
         setSyncStatus('error');
@@ -245,6 +259,8 @@ export function useSupabaseSync() {
           return await dataService.upsertCheckin(user.id, data);
         case 'nutritionDay':
           return await dataService.upsertNutritionDay(user.id, data.date, data.meals, data.complete);
+        case 'grocery':
+          return await dataService.upsertGroceryData(user.id, data);
         default:
           return { error: `Unknown sync type: ${type}` };
       }
@@ -295,6 +311,9 @@ export function useSupabaseSync() {
       }
       if (results.notes && Object.keys(results.notes).length > 0) {
         setItem(SYNC_KEYS.notes, JSON.stringify(results.notes));
+      }
+      if (results.grocery) {
+        setItem(SYNC_KEYS.grocery, JSON.stringify(results.grocery));
       }
 
       setSyncStatus('synced');

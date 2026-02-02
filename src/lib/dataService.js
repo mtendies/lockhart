@@ -629,6 +629,7 @@ export const loadAllData = async (userId) => {
     checkins: [],
     nutritionCalibration: null,
     notes: {},
+    grocery: null,
     errors: [],
   };
 
@@ -642,6 +643,7 @@ export const loadAllData = async (userId) => {
       checkinsResult,
       nutritionResult,
       notesResult,
+      groceryResult,
     ] = await Promise.all([
       getProfile(userId),
       getPlaybook(userId),
@@ -651,6 +653,7 @@ export const loadAllData = async (userId) => {
       getCheckins(userId, { limit: 10 }),
       getNutritionCalibration(userId),
       getNotes(userId),
+      getGroceryData(userId),
     ]);
 
     if (profileResult.data) results.profile = transformDbProfile(profileResult.data);
@@ -669,6 +672,7 @@ export const loadAllData = async (userId) => {
     results.checkins = checkinsResult.data || [];
     results.nutritionCalibration = nutritionResult.data;
     results.notes = notesResult.data || {};
+    results.grocery = groceryResult.data;
   } catch (err) {
     results.errors.push({ type: 'general', error: err });
   }

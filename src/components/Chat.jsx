@@ -489,6 +489,13 @@ export default function Chat({
         refreshChats();
       }
 
+      // Close sidebar and TOC on mobile when receiving initial question
+      // User should see the answer, not the chat list or TOC
+      if (window.innerWidth < 768) {
+        setSidebarOpen(false);
+        setTocOpen(false);
+      }
+
       if (questionText) {
         sendMessage(questionText);
       }
