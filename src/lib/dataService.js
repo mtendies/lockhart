@@ -5,11 +5,22 @@ import { supabase } from './supabase';
 // ============================================
 
 export const getProfile = async (userId) => {
+  console.log('[dataService] getProfile called with userId:', userId);
+
   const { data, error } = await supabase
     .from('users_profile')
     .select('*')
     .eq('id', userId)
     .single();
+
+  console.log('[dataService] getProfile response - data:', data ? 'EXISTS' : 'NULL');
+  console.log('[dataService] getProfile response - error:', error);
+
+  if (data) {
+    console.log('[dataService] Profile name:', data.name);
+    console.log('[dataService] Profile has nutrition_data:', !!data.nutrition_data);
+  }
+
   return { data, error };
 };
 
@@ -588,6 +599,8 @@ export const syncAllData = async (userId, localData) => {
 
 // Load all user data from Supabase
 export const loadAllData = async (userId) => {
+  console.log('[dataService] loadAllData called with userId:', userId);
+
   const results = {
     profile: null,
     playbook: null,
@@ -624,8 +637,15 @@ export const loadAllData = async (userId) => {
       getGroceryData(userId),
     ]);
 
-    if (profileResult.data) results.profile = transformDbProfile(profileResult.data);
+    console.log('[dataService] loadAllData - profileResult.data:', profileResult.data ? 'EXISTS' : 'NULL');
+    console.log('[dataService] loadAllData - profileResult.error:', profileResult.error);
+
+    if (profileResult.data) {
+      results.profile = transformDbProfile(profileResult.data);
+      console.log('[dataService] loadAllData - transformed profile:', results.profile ? results.profile.name : 'NULL');
+    }
     if (profileResult.error && profileResult.error.code !== 'PGRST116') {
+      console.log('[dataService] loadAllData - profile error (not PGRST116):', profileResult.error);
       results.errors.push({ type: 'profile', error: profileResult.error });
     }
 
