@@ -185,6 +185,22 @@ function AppContent() {
     setLoading(false);
   }, []);
 
+  // Reload all data after Supabase sync completes
+  // This ensures data loaded from Supabase is reflected in the UI
+  useEffect(() => {
+    if (syncStatus === 'synced') {
+      console.log('[App] Supabase sync complete, reloading data...');
+      const saved = getProfile();
+      if (saved && (!profile || JSON.stringify(saved) !== JSON.stringify(profile))) {
+        setProfile(saved);
+        previousProfileRef.current = saved;
+      }
+      setNotes(getNotes());
+      setPlaybook(getPlaybook());
+      setActivityLogs(getActivitiesThisWeek());
+    }
+  }, [syncStatus]);
+
   // Refresh playbook from localStorage - call this after any playbook modification
   function refreshPlaybook() {
     const updatedPlaybook = getPlaybook();
