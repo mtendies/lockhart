@@ -33,6 +33,9 @@ import {
   Flame,
   MessageCircle,
   CheckCircle,
+  RefreshCw,
+  Cloud,
+  CloudOff,
 } from 'lucide-react';
 import { estimateCalories, SOURCE_URLS } from '../calorieEstimator';
 import { getPlaybook } from '../playbookStore';
@@ -2802,8 +2805,57 @@ function FullPlaybookModal({ isOpen, onClose }) {
   );
 }
 
+// Sync Status Indicator Component
+function SyncIndicator({ syncStatus, onRefresh }) {
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const handleRefresh = async () => {
+    if (isRefreshing || syncStatus === 'syncing') return;
+    setIsRefreshing(true);
+    try {
+      await onRefresh?.();
+      // Reload the page to show fresh data
+      window.location.reload();
+    } catch (err) {
+      console.error('Refresh failed:', err);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  const isActive = isRefreshing || syncStatus === 'syncing';
+
+  return (
+    <button
+      onClick={handleRefresh}
+      disabled={isActive}
+      className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs transition-all ${
+        isActive
+          ? 'bg-blue-50 text-blue-600'
+          : syncStatus === 'error'
+          ? 'bg-red-50 text-red-600 hover:bg-red-100'
+          : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+      }`}
+      title={isActive ? 'Syncing...' : 'Tap to refresh from cloud'}
+    >
+      {syncStatus === 'error' ? (
+        <CloudOff size={14} />
+      ) : (
+        <Cloud size={14} className={isActive ? 'text-blue-500' : ''} />
+      )}
+      <RefreshCw
+        size={12}
+        className={isActive ? 'animate-spin' : ''}
+      />
+      <span className="hidden sm:inline">
+        {isActive ? 'Syncing...' : 'Sync'}
+      </span>
+    </button>
+  );
+}
+
 // Main HomePage Component
-export default function HomePage({ onNavigate, onOpenCheckIn }) {
+export default function HomePage({ onNavigate, onOpenCheckIn, syncStatus, onRefresh, dataVersion }) {
   const [profile, setProfile] = useState(null);
   const [showPlaybook, setShowPlaybook] = useState(false);
   const [expandedSections, setExpandedSections] = useState({
@@ -2811,13 +2863,64 @@ export default function HomePage({ onNavigate, onOpenCheckIn }) {
     wins: false,
   });
 
+  // Pull-to-refresh state
+  const [pullDistance, setPullDistance] = useState(0);
+  const [isPulling, setIsPulling] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const touchStartY = useRef(0);
+  const containerRef = useRef(null);
+  const PULL_THRESHOLD = 80; // Pixels to pull before triggering refresh
+
   // Check if in calibration period
   const inCalibration = isInCalibrationPeriod() && !isCalibrationComplete();
 
+  // Load profile on mount and when dataVersion changes (after sync)
   useEffect(() => {
     window.scrollTo(0, 0);
     setProfile(getProfile());
-  }, []);
+  }, [dataVersion]);
+
+  // Pull-to-refresh handlers
+  const handleTouchStart = (e) => {
+    // Only activate when scrolled to top
+    if (window.scrollY === 0 && onRefresh) {
+      touchStartY.current = e.touches[0].clientY;
+      setIsPulling(true);
+    }
+  };
+
+  const handleTouchMove = (e) => {
+    if (!isPulling || isRefreshing) return;
+
+    const touchY = e.touches[0].clientY;
+    const diff = touchY - touchStartY.current;
+
+    // Only allow pulling down (positive diff) when at top
+    if (diff > 0 && window.scrollY === 0) {
+      // Apply resistance (pull slows down as you pull more)
+      const resistance = Math.min(diff * 0.4, PULL_THRESHOLD + 40);
+      setPullDistance(resistance);
+    }
+  };
+
+  const handleTouchEnd = async () => {
+    if (!isPulling) return;
+
+    if (pullDistance >= PULL_THRESHOLD && onRefresh && !isRefreshing) {
+      setIsRefreshing(true);
+      try {
+        await onRefresh();
+        window.location.reload();
+      } catch (err) {
+        console.error('Pull refresh failed:', err);
+      } finally {
+        setIsRefreshing(false);
+      }
+    }
+
+    setIsPulling(false);
+    setPullDistance(0);
+  };
 
   function toggleSection(section) {
     setExpandedSections(prev => ({
@@ -2842,13 +2945,38 @@ export default function HomePage({ onNavigate, onOpenCheckIn }) {
   }
 
   return (
-    <div className="bg-gray-50/50 pb-8">
+    <div
+      ref={containerRef}
+      className="bg-gray-50/50 pb-8"
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+    >
+      {/* Pull-to-refresh indicator */}
+      {(pullDistance > 0 || isRefreshing) && (
+        <div
+          className="flex items-center justify-center overflow-hidden transition-all duration-200"
+          style={{ height: isRefreshing ? 50 : pullDistance }}
+        >
+          <div className={`flex items-center gap-2 text-sm ${
+            pullDistance >= PULL_THRESHOLD || isRefreshing ? 'text-primary-600' : 'text-gray-400'
+          }`}>
+            <RefreshCw size={16} className={isRefreshing ? 'animate-spin' : ''} />
+            <span>
+              {isRefreshing ? 'Refreshing...' : pullDistance >= PULL_THRESHOLD ? 'Release to refresh' : 'Pull to refresh'}
+            </span>
+          </div>
+        </div>
+      )}
       <div className="max-w-2xl mx-auto px-4 py-6 space-y-5">
         {/* 1. Greeting + Goal Reminder + Quick Entry */}
         <section>
-          <h1 className="text-2xl font-bold text-gray-900 mb-4">
-            {getGreeting()}, {profile?.name?.split(' ')[0] || 'there'}
-          </h1>
+          <div className="flex items-start justify-between mb-4">
+            <h1 className="text-2xl font-bold text-gray-900">
+              {getGreeting()}, {profile?.name?.split(' ')[0] || 'there'}
+            </h1>
+            {onRefresh && <SyncIndicator syncStatus={syncStatus} onRefresh={onRefresh} />}
+          </div>
           <GoalReminder profile={profile} />
           <QuickEntryBox
             onSubmit={handleGoToAdvisor}

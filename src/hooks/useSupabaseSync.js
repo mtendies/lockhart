@@ -5,10 +5,13 @@
  * - Loads all user data from Supabase
  * - Populates localStorage stores as cache
  *
+ * On data change:
+ * - syncHelper.js handles auto-push to Supabase
+ *
  * Provides sync functions for real-time updates
  */
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import * as dataService from '../lib/dataService';
 import { getItem, setItem } from '../storageHelper';
@@ -32,15 +35,27 @@ export function useSupabaseSync() {
   const [lastSynced, setLastSynced] = useState(null);
   const [syncErrors, setSyncErrors] = useState([]);
   const [supabaseProfile, setSupabaseProfile] = useState(null); // Profile loaded from Supabase
+  const [dataVersion, setDataVersion] = useState(0); // Increment to trigger UI refresh
+  const isSyncingRef = useRef(false); // Prevent concurrent syncs
 
   // Load all data from Supabase into localStorage
   // IMPORTANT: Only overwrites local data if Supabase has MORE data
-  const loadFromSupabase = useCallback(async () => {
-    console.log('[Sync] loadFromSupabase called, user:', user?.id);
+  const loadFromSupabase = useCallback(async (options = {}) => {
+    const { silent = false } = options;
+    console.log('[Sync] loadFromSupabase called, user:', user?.id, 'silent:', silent);
 
-    if (!user?.id) return;
+    if (!user?.id) return null;
 
-    setSyncStatus('syncing');
+    // Prevent concurrent syncs
+    if (isSyncingRef.current) {
+      console.log('[Sync] Already syncing, skipping...');
+      return null;
+    }
+    isSyncingRef.current = true;
+
+    if (!silent) {
+      setSyncStatus('syncing');
+    }
     setSyncErrors([]);
 
     try {
@@ -170,13 +185,17 @@ export function useSupabaseSync() {
       } else {
         setSyncStatus('synced');
         setLastSynced(new Date());
+        // Bump version to trigger UI refresh
+        setDataVersion(v => v + 1);
       }
 
+      isSyncingRef.current = false;
       return results;
     } catch (err) {
       console.error('Supabase sync error:', err);
       setSyncErrors([{ type: 'general', error: err }]);
       setSyncStatus('error');
+      isSyncingRef.current = false;
       return null;
     }
   }, [user?.id]);
@@ -309,10 +328,17 @@ export function useSupabaseSync() {
     }
   }, [user?.id]);
 
-  // Force load from Supabase (for data recovery)
+  // Force load from Supabase (for data recovery or manual refresh)
   // This will OVERWRITE local data with Supabase data
   const forceLoadFromSupabase = useCallback(async () => {
     if (!user?.id) return null;
+
+    // Prevent concurrent syncs
+    if (isSyncingRef.current) {
+      console.log('[Sync] Already syncing, skipping force load...');
+      return null;
+    }
+    isSyncingRef.current = true;
 
     console.log('[Sync] FORCE loading from Supabase (will overwrite local data)...');
     setSyncStatus('syncing');
@@ -324,6 +350,7 @@ export function useSupabaseSync() {
       // Force update - overwrite local data
       if (results.profile) {
         setItem(SYNC_KEYS.profile, JSON.stringify(results.profile));
+        setSupabaseProfile(results.profile);
       }
       if (results.activities?.length > 0) {
         const activities = results.activities.map(a => ({
@@ -357,40 +384,40 @@ export function useSupabaseSync() {
 
       setSyncStatus('synced');
       setLastSynced(new Date());
-      console.log('[Sync] Force load complete. Refresh the page to see restored data.');
+      setDataVersion(v => v + 1); // Bump version to trigger UI refresh
+      isSyncingRef.current = false;
+      console.log('[Sync] Force load complete.');
       return results;
     } catch (err) {
       console.error('Force sync error:', err);
       setSyncErrors([{ type: 'general', error: err }]);
       setSyncStatus('error');
+      isSyncingRef.current = false;
       return null;
     }
   }, [user?.id]);
 
   // Auto-load from Supabase when authenticated
-  // ALWAYS loads missing data from Supabase, then pushes local data
+  // Runs on EVERY mount/refresh - no session check
   useEffect(() => {
     if (isAuthenticated && user?.id) {
-      // Only run auto-sync once per session
-      const syncKey = `health-advisor-sync-done-${user.id}`;
-      if (sessionStorage.getItem(syncKey)) {
-        // Already synced this session - mark as synced so UI doesn't wait
-        setSyncStatus('synced');
-        return;
-      }
-
-      // Always load from Supabase to get any missing data (conversations, nutrition, etc.)
-      // IMPORTANT: Do NOT push back to Supabase automatically!
-      // Supabase is the source of truth. Only push when user makes NEW changes.
-      console.log('[Sync] Loading data from Supabase...');
-      loadFromSupabase().then(() => {
-        localStorage.setItem('health-advisor-last-supabase-sync', Date.now().toString());
-        sessionStorage.setItem(syncKey, 'true');
-        // DO NOT call pushToSupabase() here - it would overwrite Supabase with stale local data!
-        // Profile sync happens via syncHelper.js when user SAVES changes
+      // Always load from Supabase to get the latest data
+      // This ensures data is fresh on every app load/refresh
+      console.log('[Sync] Auto-loading data from Supabase on mount...');
+      loadFromSupabase({ silent: false }).then((results) => {
+        if (results) {
+          localStorage.setItem('health-advisor-last-supabase-sync', Date.now().toString());
+          console.log('[Sync] Auto-sync complete');
+        }
       });
     }
   }, [isAuthenticated, user?.id, loadFromSupabase]);
+
+  // Manual refresh function - forces a fresh pull from Supabase
+  const refreshFromCloud = useCallback(async () => {
+    console.log('[Sync] Manual refresh requested...');
+    return await forceLoadFromSupabase();
+  }, [forceLoadFromSupabase]);
 
   return {
     syncStatus,
@@ -399,10 +426,12 @@ export function useSupabaseSync() {
     loadFromSupabase,
     pushToSupabase,
     syncToSupabase,
-    forceLoadFromSupabase, // For data recovery - overwrites local data
+    forceLoadFromSupabase,
+    refreshFromCloud, // Manual refresh - pulls fresh data from Supabase
     isAuthenticated,
     userId: user?.id,
-    supabaseProfile, // Profile loaded directly from Supabase - use this as source of truth
+    supabaseProfile,
+    dataVersion, // Increments when data is loaded from Supabase - use to trigger re-renders
   };
 }
 

@@ -76,7 +76,7 @@ import { getLearnedInsights } from './learnedInsightsStore';
 
 function AppContent() {
   const { user, loading: authLoading, signOut } = useAuth();
-  const { syncStatus, loadFromSupabase, pushToSupabase, syncToSupabase, forceLoadFromSupabase, supabaseProfile } = useSupabaseSync();
+  const { syncStatus, loadFromSupabase, pushToSupabase, syncToSupabase, forceLoadFromSupabase, refreshFromCloud, supabaseProfile, dataVersion } = useSupabaseSync();
 
   // Expose recovery function globally for console access
   useEffect(() => {
@@ -573,7 +573,13 @@ function AppContent() {
         <div className="flex-1 flex flex-col min-h-0 pb-safe">
           {view === 'home' && (
             <div className="flex-1 overflow-y-auto">
-              <HomePage onNavigate={handleNavigate} onOpenCheckIn={handleOpenCheckIn} />
+              <HomePage
+                onNavigate={handleNavigate}
+                onOpenCheckIn={handleOpenCheckIn}
+                syncStatus={syncStatus}
+                onRefresh={refreshFromCloud}
+                dataVersion={dataVersion}
+              />
             </div>
           )}
 
