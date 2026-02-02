@@ -1421,7 +1421,9 @@ function NutritionCalibrationCard() {
   const [dragIndex, setDragIndex] = useState(null);
   const [showAddMeal, setShowAddMeal] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [editingDay, setEditingDay] = useState(null); // Track which day is being edited (null = today)
   const todayKey = getTodayDayKey();
+  const activeDay = editingDay || todayKey; // The day currently being edited
   const profile = getProfile();
 
   useEffect(() => {
@@ -1448,6 +1450,30 @@ function NutritionCalibrationCard() {
     setCalibrationData(data);
   }, [todayKey]);
 
+  // Initialize meals for past day when selected for editing
+  useEffect(() => {
+    if (editingDay && CALIBRATION_DAYS.includes(editingDay)) {
+      const data = getCalibrationData();
+      if (!data.days[editingDay]?.meals || data.days[editingDay].meals.length === 0) {
+        // Initialize the past day with default meals
+        const defaultMeals = getDefaultMealPattern().map((meal, idx) => ({
+          id: `${editingDay}-${meal.type}-${Date.now()}-${idx}`,
+          type: meal.type,
+          label: meal.label,
+          content: '',
+          order: idx,
+        }));
+        data.days[editingDay] = {
+          ...data.days[editingDay],
+          meals: defaultMeals,
+          completed: false,
+        };
+        saveCalibrationData(data);
+        setCalibrationData(data);
+      }
+    }
+  }, [editingDay]);
+
   function handleMealUpdate(dayKey, mealId, content) {
     updateMealById(dayKey, mealId, { content });
     setCalibrationData(getCalibrationData());
@@ -1462,7 +1488,7 @@ function NutritionCalibrationCard() {
     e.preventDefault();
     if (dragIndex === null || dragIndex === index) return;
 
-    const meals = [...(calibrationData.days[todayKey]?.meals || [])];
+    const meals = [...(calibrationData.days[activeDay]?.meals || [])];
     const [draggedMeal] = meals.splice(dragIndex, 1);
     meals.splice(index, 0, draggedMeal);
 
@@ -1470,8 +1496,8 @@ function NutritionCalibrationCard() {
       ...prev,
       days: {
         ...prev.days,
-        [todayKey]: {
-          ...prev.days[todayKey],
+        [activeDay]: {
+          ...prev.days[activeDay],
           meals,
         },
       },
@@ -1480,15 +1506,15 @@ function NutritionCalibrationCard() {
   }
 
   function handleDragEnd() {
-    if (todayKey && calibrationData.days[todayKey]?.meals) {
-      reorderDayMeals(todayKey, calibrationData.days[todayKey].meals);
+    if (activeDay && calibrationData.days[activeDay]?.meals) {
+      reorderDayMeals(activeDay, calibrationData.days[activeDay].meals);
     }
     setDragIndex(null);
   }
 
   function handleAddMeal(type) {
-    if (!todayKey) return;
-    addMealToDay(todayKey, type);
+    if (!activeDay) return;
+    addMealToDay(activeDay, type);
     setCalibrationData(getCalibrationData());
     setShowAddMeal(false);
   }
@@ -1501,11 +1527,12 @@ function NutritionCalibrationCard() {
   if (!calibrationData) return null;
 
   const progress = getCalibrationProgress();
-  const todayData = todayKey && CALIBRATION_DAYS.includes(todayKey)
-    ? calibrationData.days[todayKey]
+  const activeDayData = activeDay && CALIBRATION_DAYS.includes(activeDay)
+    ? calibrationData.days[activeDay]
     : null;
-  const meals = todayData?.meals || [];
+  const meals = activeDayData?.meals || [];
   const filledCount = meals.filter(m => m.content?.trim()).length;
+  const isEditingPastDay = editingDay && editingDay !== todayKey;
 
   // Get completed days for "View completed days"
   const completedDays = CALIBRATION_DAYS.filter(day =>
@@ -1535,7 +1562,7 @@ function NutritionCalibrationCard() {
       </div>
 
       {/* FEATURE 1: Calorie Progress Section */}
-      {todayData && meals.length > 0 && (() => {
+      {activeDayData && meals.length > 0 && (() => {
         const consumedCalories = getTodaysCaloriesFromMeals(meals);
         const targetCalories = calculateDailyCalorieBudget(profile);
         const remainingCalories = targetCalories - consumedCalories;
@@ -1546,7 +1573,7 @@ function NutritionCalibrationCard() {
         return (
           <div className="bg-white rounded-xl border border-gray-200 p-3 mb-4">
             <div className="flex items-center justify-between text-xs text-gray-500 uppercase tracking-wide mb-2">
-              <span className="font-semibold">Today's Calories</span>
+              <span className="font-semibold">{isEditingPastDay ? `${DAY_LABELS[activeDay]}'s Calories` : "Today's Calories"}</span>
             </div>
 
             <div className="flex items-baseline justify-between mb-2">
@@ -1600,16 +1627,38 @@ function NutritionCalibrationCard() {
         );
       })()}
 
-      {/* Today's Meals - Toned down date header */}
-      {todayData && !todayData.completed && (
+      {/* Active Day's Meals - Toned down date header */}
+      {activeDayData && (
         <div className="mb-4">
-          {/* Today Header - Simpler, not shouty */}
+          {/* Day Header */}
           <div className="flex items-center justify-between mb-3 pb-2 border-b border-amber-200">
             <div className="flex items-center gap-2">
-              <span className="text-sm font-medium text-gray-700">{formatSimpleDate()}</span>
-              <span className="text-xs text-amber-600 font-medium">· Today</span>
+              {isEditingPastDay ? (
+                <>
+                  <span className="text-sm font-medium text-gray-700">{DAY_LABELS[activeDay]}</span>
+                  <span className="text-xs text-purple-600 font-medium">· Editing</span>
+                  {activeDayData.completed && (
+                    <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded">Completed</span>
+                  )}
+                </>
+              ) : (
+                <>
+                  <span className="text-sm font-medium text-gray-700">{formatSimpleDate()}</span>
+                  <span className="text-xs text-amber-600 font-medium">· Today</span>
+                </>
+              )}
             </div>
-            <span className="text-sm text-gray-500">{filledCount} of {meals.length} logged</span>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-500">{filledCount} of {meals.length} logged</span>
+              {isEditingPastDay && (
+                <button
+                  onClick={() => setEditingDay(null)}
+                  className="text-xs text-primary-600 hover:text-primary-800 font-medium"
+                >
+                  ← Back to today
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Meal Slots */}
@@ -1618,7 +1667,7 @@ function NutritionCalibrationCard() {
               <DraggableMealSlot
                 key={meal.id}
                 meal={meal}
-                dayKey={todayKey}
+                dayKey={activeDay}
                 index={index}
                 onUpdate={handleMealUpdate}
                 onDragStart={handleDragStart}
@@ -1682,7 +1731,7 @@ function NutritionCalibrationCard() {
                progress.completed === 3 ? '⭐' : '🔥'}
             </span>
             <span className="text-sm font-medium text-amber-800">
-              Day {progress.completed + (todayData && !todayData.completed ? 1 : 0)} of 5
+              Day {progress.completed + (calibrationData.days[todayKey] && !calibrationData.days[todayKey]?.completed ? 1 : 0)} of 5
               {progress.completed > 0 && progress.remaining > 0 && " - Keep it up!"}
             </span>
           </div>
@@ -1727,18 +1776,32 @@ function NutritionCalibrationCard() {
               const targetDate = new Date(today);
               targetDate.setDate(today.getDate() + diff);
 
+              // Check if this day is editable (not a future day)
+              const isFuture = dayOrder[day] > todayDayIndex && day !== todayKey;
+              const isEditable = !isFuture || dayData?.completed || dayFilledCount > 0;
+              const isCurrentlyEditing = editingDay === day || (editingDay === null && isToday);
+
               return (
-                <div
+                <button
                   key={day}
-                  className={`flex items-center justify-between px-3 py-2.5 border-b border-gray-100 last:border-b-0 ${
-                    isToday ? 'bg-blue-50' : ''
+                  onClick={() => {
+                    if (isEditable) {
+                      setEditingDay(day === todayKey ? null : day);
+                      setShowPreviousDays(false);
+                    }
+                  }}
+                  disabled={!isEditable}
+                  className={`w-full flex items-center justify-between px-3 py-2.5 border-b border-gray-100 last:border-b-0 transition-colors ${
+                    isCurrentlyEditing ? 'bg-primary-50 border-l-2 border-l-primary-500' :
+                    isToday ? 'bg-blue-50 hover:bg-blue-100' :
+                    isEditable ? 'hover:bg-gray-50' : 'opacity-50 cursor-not-allowed'
                   }`}
                 >
                   <div className="flex items-center gap-3">
                     <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium ${statusColor}`}>
                       {statusIcon}
                     </span>
-                    <div>
+                    <div className="text-left">
                       <span className="text-sm font-medium text-gray-800">
                         {DAY_LABELS[day]}
                         {isToday && <span className="text-blue-600 ml-1">(Today)</span>}
@@ -1756,7 +1819,12 @@ function NutritionCalibrationCard() {
                       </span>
                     </div>
                   </div>
-                </div>
+                  {isEditable && (
+                    <span className="text-xs text-gray-400">
+                      {isCurrentlyEditing ? 'Editing' : 'Tap to edit'}
+                    </span>
+                  )}
+                </button>
               );
             })}
 
