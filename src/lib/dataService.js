@@ -209,18 +209,44 @@ const transformDbPlaybook = (dbPlaybook) => {
 export const getNutritionCalibration = async (userId) => {
   console.log('[dataService] getNutritionCalibration called for user:', userId);
 
-  const { data, error } = await supabase
+  // NEW APPROACH: Store entire calibration as single row with date='_full_'
+  // This avoids all date-to-dayname conversion issues
+  const { data: fullData, error: fullError } = await supabase
     .from('nutrition_calibration')
     .select('*')
     .eq('user_id', userId)
+    .eq('date', '_full_')
+    .single();
+
+  console.log('[dataService] Full calibration row:', fullData);
+
+  if (fullData?.meals) {
+    // New format: meals column contains the entire calibration object
+    console.log('[dataService] Found full calibration data');
+    return { data: fullData.meals, error: null };
+  }
+
+  // Fallback: Check for old per-day format and migrate
+  const { data: oldData, error: oldError } = await supabase
+    .from('nutrition_calibration')
+    .select('*')
+    .eq('user_id', userId)
+    .neq('date', '_full_')
     .order('date', { ascending: true });
 
-  console.log('[dataService] Supabase nutrition_calibration raw data:', data);
-  console.log('[dataService] Supabase nutrition_calibration error:', error);
+  console.log('[dataService] Old format data:', oldData);
 
-  if (error) return { data: null, error };
+  if (oldError && oldError.code !== 'PGRST116') {
+    return { data: null, error: oldError };
+  }
 
-  // Transform to app format - must match what getCalibrationData() expects
+  if (!oldData || oldData.length === 0) {
+    console.log('[dataService] No nutrition data found');
+    return { data: null, error: null };
+  }
+
+  // Convert old format to new format
+  console.log('[dataService] Converting old format to new...');
   const calibration = {
     days: {
       monday: null,
@@ -229,99 +255,84 @@ export const getNutritionCalibration = async (userId) => {
       thursday: null,
       friday: null,
     },
-    startedAt: null,
+    startedAt: oldData[0].created_at || new Date().toISOString(),
     completedAt: null,
-    currentDay: 'monday', // Required by app
+    currentDay: 'monday',
   };
 
-  if (data && data.length > 0) {
-    calibration.startedAt = data[0].date + 'T00:00:00.000Z';
-    const completedCount = data.filter(d => d.complete).length;
+  // Map old rows to days - use the day name stored in meals if available
+  oldData.forEach((entry, index) => {
+    // Try to get day name from meals data, or use index-based mapping
+    const dayNames = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'];
+    const dayName = entry.meals?.dayName || dayNames[index] || dayNames[0];
 
-    data.forEach((entry) => {
-      // Convert date string to day name
-      const dateObj = new Date(entry.date + 'T12:00:00');
-      const dayName = dateObj.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
-
-      console.log('[dataService] Converting date:', entry.date, '-> dayName:', dayName);
-
-      // entry.meals contains the full day data including meals array
-      if (['monday', 'tuesday', 'wednesday', 'thursday', 'friday'].includes(dayName)) {
-        calibration.days[dayName] = {
-          ...entry.meals,
-          completed: entry.complete || false,
-          completedAt: entry.complete ? entry.updated_at : null,
-        };
-      }
-    });
-
-    // Find the most recent day with data to set as currentDay
-    const daysWithData = Object.entries(calibration.days)
-      .filter(([_, data]) => data !== null)
-      .map(([day]) => day);
-    if (daysWithData.length > 0) {
-      calibration.currentDay = daysWithData[daysWithData.length - 1];
+    if (dayNames.includes(dayName)) {
+      calibration.days[dayName] = {
+        ...entry.meals,
+        completed: entry.complete || false,
+        completedAt: entry.complete ? entry.updated_at : null,
+      };
     }
+  });
 
-    // If all 5 days are complete, set completedAt
-    if (completedCount >= 5) {
-      calibration.completedAt = data[data.length - 1].updated_at || new Date().toISOString();
-    }
+  // Find current day
+  const daysWithData = Object.entries(calibration.days)
+    .filter(([_, d]) => d !== null)
+    .map(([day]) => day);
+  if (daysWithData.length > 0) {
+    calibration.currentDay = daysWithData[daysWithData.length - 1];
   }
 
-  console.log('[dataService] Transformed nutrition calibration:', JSON.stringify(calibration, null, 2));
+  // Check if complete
+  const completedCount = Object.values(calibration.days).filter(d => d?.completed).length;
+  if (completedCount >= 5) {
+    calibration.completedAt = new Date().toISOString();
+  }
+
+  console.log('[dataService] Converted calibration:', JSON.stringify(calibration, null, 2));
+
+  // Migrate: Save converted data in new format
+  console.log('[dataService] Migrating old nutrition data to new format...');
+  await upsertNutritionCalibration(userId, calibration);
 
   return { data: calibration, error: null };
 };
 
+// Upsert a single day (legacy - kept for backwards compatibility)
 export const upsertNutritionDay = async (userId, date, meals, complete = false) => {
+  // Now we save the full calibration instead of individual days
+  // This function is kept for backwards compatibility but redirects to full save
+  console.log('[dataService] upsertNutritionDay called - redirecting to full calibration save');
+  return { data: null, error: null };
+};
+
+// Upsert entire calibration data as a single row
+// NEW APPROACH: Store everything in one row with date='_full_'
+export const upsertNutritionCalibration = async (userId, calibrationData) => {
+  if (!calibrationData) return { data: null, error: 'No calibration data' };
+
+  console.log('[dataService] upsertNutritionCalibration - saving full object');
+  console.log('[dataService] Data to save:', JSON.stringify(calibrationData).substring(0, 200));
+
   const { data, error } = await supabase
     .from('nutrition_calibration')
     .upsert({
       user_id: userId,
-      date,
-      meals,
-      complete,
+      date: '_full_',  // Special marker for full calibration row
+      meals: calibrationData,  // Store entire calibration object here
+      complete: !!calibrationData.completedAt,
+    }, {
+      onConflict: 'user_id,date'
     })
     .select();
-  return { data, error };
-};
 
-// Upsert entire calibration data (all days at once)
-export const upsertNutritionCalibration = async (userId, calibrationData) => {
-  if (!calibrationData?.days) return { data: null, error: 'No calibration data' };
-
-  const errors = [];
-  const dayOrder = { monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5 };
-
-  // Get the start date from calibrationData or calculate from current week
-  const getDateForDay = (dayName) => {
-    const today = new Date();
-    const todayDay = today.getDay(); // 0=Sun, 1=Mon, etc.
-    const targetDay = dayOrder[dayName];
-    const diff = targetDay - todayDay;
-    const targetDate = new Date(today);
-    targetDate.setDate(today.getDate() + diff);
-    return targetDate.toISOString().split('T')[0];
-  };
-
-  for (const [dayName, dayData] of Object.entries(calibrationData.days)) {
-    if (!dayData) continue;
-
-    const date = getDateForDay(dayName);
-    const { error } = await supabase
-      .from('nutrition_calibration')
-      .upsert({
-        user_id: userId,
-        date,
-        meals: dayData,
-        complete: dayData.completed || false,
-      });
-
-    if (error) errors.push({ day: dayName, error });
+  if (error) {
+    console.error('[dataService] Error saving nutrition calibration:', error);
+  } else {
+    console.log('[dataService] Nutrition calibration saved successfully');
   }
 
-  return { data: 'ok', errors: errors.length > 0 ? errors : null };
+  return { data, error };
 };
 
 // ============================================

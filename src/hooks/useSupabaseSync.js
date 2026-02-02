@@ -36,15 +36,9 @@ export function useSupabaseSync() {
   // Load all data from Supabase into localStorage
   // IMPORTANT: Only overwrites local data if Supabase has MORE data
   const loadFromSupabase = useCallback(async () => {
-    console.log('!!! ===================================== !!!');
-    console.log('!!! LOAD FROM SUPABASE CALLED !!!');
-    console.log('!!! user?.id:', user?.id);
-    console.log('!!! ===================================== !!!');
+    console.log('[Sync] loadFromSupabase called, user:', user?.id);
 
-    if (!user?.id) {
-      console.log('!!! NO USER ID - RETURNING EARLY !!!');
-      return;
-    }
+    if (!user?.id) return;
 
     setSyncStatus('syncing');
     setSyncErrors([]);
@@ -148,56 +142,23 @@ export function useSupabaseSync() {
       }
 
       // Store nutrition calibration - Supabase is SOURCE OF TRUTH
-      // Import getActiveProfileId to see actual storage key
-      const { getActiveProfileId } = await import('../profileStore');
-      const activeProfileId = getActiveProfileId();
+      // Now uses simplified single-row approach (no date conversion issues)
+      console.log('[Sync] Nutrition calibration from Supabase:', results.nutritionCalibration);
 
-      console.log('!!! ===================================== !!!');
-      console.log('!!! NUTRITION CALIBRATION SECTION !!!');
-      console.log('!!! Active Profile ID:', activeProfileId);
-      console.log('!!! Base Key:', SYNC_KEYS.nutrition);
-      console.log('!!! Actual localStorage Key:', `${activeProfileId}:${SYNC_KEYS.nutrition}`);
-      console.log('!!! results.nutritionCalibration:', JSON.stringify(results.nutritionCalibration, null, 2));
-      console.log('!!! ===================================== !!!');
-
-      if (results.nutritionCalibration) {
-        const days = results.nutritionCalibration.days || {};
+      if (results.nutritionCalibration && results.nutritionCalibration.days) {
+        const days = results.nutritionCalibration.days;
         const daysWithData = Object.entries(days).filter(([_, data]) => data !== null);
 
-        console.log('!!! Days object keys:', Object.keys(days));
-        console.log('!!! Days with actual data:', daysWithData.length);
-        console.log('!!! Day names with data:', daysWithData.map(([day]) => day));
+        console.log('[Sync] Nutrition days with data:', daysWithData.map(([day]) => day));
 
         if (daysWithData.length > 0) {
-          console.log('!!! ABOUT TO SAVE NUTRITION TO LOCALSTORAGE !!!');
-
-          const dataToSave = JSON.stringify(results.nutritionCalibration);
-          console.log('!!! Data length:', dataToSave.length);
-          console.log('!!! Data preview:', dataToSave.substring(0, 200));
-
-          setItem(SYNC_KEYS.nutrition, dataToSave);
-
-          // Verify by reading back
-          const actualKey = `${activeProfileId}:${SYNC_KEYS.nutrition}`;
-          const verifyDirect = localStorage.getItem(actualKey);
-          const verifyHelper = getItem(SYNC_KEYS.nutrition);
-
-          console.log('!!! VERIFY - Checking key:', actualKey);
-          console.log('!!! VERIFY (direct localStorage):', verifyDirect ? 'HAS DATA (' + verifyDirect.length + ' chars)' : 'EMPTY!!!');
-          console.log('!!! VERIFY (via getItem helper):', verifyHelper ? 'HAS DATA' : 'EMPTY!!!');
-
-          if (!verifyDirect && !verifyHelper) {
-            console.log('!!! CRITICAL: SAVE FAILED - DATA NOT IN LOCALSTORAGE !!!');
-          } else {
-            console.log('!!! NUTRITION SAVE SUCCESSFUL !!!');
-          }
+          setItem(SYNC_KEYS.nutrition, JSON.stringify(results.nutritionCalibration));
+          console.log('[Sync] Nutrition calibration saved to localStorage');
         } else {
-          console.log('!!! NO NUTRITION DAYS WITH DATA - NOT SAVING !!!');
-          console.log('!!! This means Supabase returned empty days object !!!');
+          console.log('[Sync] Nutrition has days object but no data in days');
         }
       } else {
-        console.log('!!! results.nutritionCalibration IS NULL/UNDEFINED !!!');
-        console.log('!!! Check dataService.getNutritionCalibration for errors !!!');
+        console.log('[Sync] No nutrition calibration data from Supabase');
       }
 
       // Store notes (only if no local notes)
