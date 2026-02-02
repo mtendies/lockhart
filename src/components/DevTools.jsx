@@ -399,6 +399,90 @@ export default function DevTools({ isModal = false, onClose }) {
     setTimeout(() => window.location.reload(), 500);
   }
 
+  async function handleForcePushToSupabase() {
+    if (!user?.id) {
+      showNotification('You must be logged in to sync to Supabase', 'error');
+      return;
+    }
+
+    if (!window.confirm('This will push ALL your current local data to Supabase, overwriting any existing cloud data. Continue?')) {
+      return;
+    }
+
+    setLoading('push-supabase');
+    const errors = [];
+    const success = [];
+
+    try {
+      // Push profile
+      const profileData = getItem('health-advisor-profile');
+      if (profileData) {
+        const profile = JSON.parse(profileData);
+        const { error } = await dataService.upsertProfile(user.id, profile);
+        if (error) errors.push(`Profile: ${error.message}`);
+        else success.push('Profile');
+      }
+
+      // Push playbook
+      const playbookData = getItem('health-advisor-playbook');
+      if (playbookData) {
+        const playbook = JSON.parse(playbookData);
+        const { error } = await dataService.upsertPlaybook(user.id, playbook);
+        if (error) errors.push(`Playbook: ${error.message}`);
+        else success.push('Playbook');
+      }
+
+      // Push conversations
+      const chatsData = getItem('health-advisor-chats');
+      if (chatsData) {
+        const chats = JSON.parse(chatsData);
+        for (const chat of chats) {
+          const { error } = await dataService.upsertConversation(user.id, chat);
+          if (error && error.code !== '23505') errors.push(`Chat: ${error.message}`);
+        }
+        if (chats.length > 0) success.push(`${chats.length} Conversations`);
+      }
+
+      // Push activities
+      const activitiesData = getItem('health-advisor-activities');
+      if (activitiesData) {
+        const activities = JSON.parse(activitiesData);
+        for (const activity of activities) {
+          const { error } = await dataService.addActivity(user.id, activity);
+          if (error && error.code !== '23505') errors.push(`Activity: ${error.message}`);
+        }
+        if (activities.length > 0) success.push(`${activities.length} Activities`);
+      }
+
+      // Push insights
+      const insightsData = getItem('health-advisor-learned-insights');
+      if (insightsData) {
+        const insights = JSON.parse(insightsData);
+        for (const insight of insights) {
+          const { error } = await dataService.addLearnedInsight(user.id, {
+            text: insight.text || insight.insight,
+            category: insight.category,
+            confidence: insight.confidence,
+          });
+          if (error && error.code !== '23505') errors.push(`Insight: ${error.message}`);
+        }
+        if (insights.length > 0) success.push(`${insights.length} Insights`);
+      }
+
+      if (errors.length > 0) {
+        console.error('Push errors:', errors);
+        showNotification(`Pushed with ${errors.length} errors. Check console.`, 'error');
+      } else {
+        showNotification(`Successfully pushed: ${success.join(', ')}`, 'success');
+      }
+    } catch (err) {
+      console.error('Force push error:', err);
+      showNotification(`Error: ${err.message}`, 'error');
+    } finally {
+      setLoading(null);
+    }
+  }
+
   async function handleLegacyImport() {
     if (!user?.id) {
       showNotification('You must be logged in to import data', 'error');
@@ -1058,6 +1142,26 @@ export default function DevTools({ isModal = false, onClose }) {
                       <div>
                         <p className="text-sm font-medium text-violet-900">Import Legacy Data to Supabase</p>
                         <p className="text-xs text-violet-600">Migrate old localStorage data to cloud storage</p>
+                      </div>
+                    </button>
+
+                    <button
+                      onClick={handleForcePushToSupabase}
+                      disabled={loading === 'push-supabase' || !user}
+                      className="w-full p-3 rounded-xl border-2 border-dashed border-cyan-300 hover:border-cyan-400 hover:bg-cyan-50/50 text-left transition-all flex items-center gap-3 disabled:opacity-50"
+                    >
+                      <div className="p-2 bg-cyan-100 rounded-lg">
+                        {loading === 'push-supabase' ? (
+                          <Loader2 size={16} className="text-cyan-600 animate-spin" />
+                        ) : (
+                          <Upload size={16} className="text-cyan-600" />
+                        )}
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-cyan-900">Force Push to Supabase</p>
+                        <p className="text-xs text-cyan-600">
+                          {user ? 'Push current local data to cloud (fixes sync issues)' : 'Login required'}
+                        </p>
                       </div>
                     </button>
                   </div>

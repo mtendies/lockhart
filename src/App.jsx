@@ -99,10 +99,12 @@ function AppContent() {
   const [syncWaitExpired, setSyncWaitExpired] = useState(false);
 
   // Timeout for waiting on sync - don't wait forever
+  // Increased to 10 seconds to handle slow mobile networks
   useEffect(() => {
     const timer = setTimeout(() => {
+      console.log('[App] Sync wait timeout expired');
       setSyncWaitExpired(true);
-    }, 5000); // Wait max 5 seconds for sync
+    }, 10000); // Wait max 10 seconds for sync
     return () => clearTimeout(timer);
   }, []);
   const [view, setView] = useState('home');
@@ -201,7 +203,9 @@ function AppContent() {
     if (syncStatus === 'synced') {
       console.log('[App] Supabase sync complete, reloading data...');
       const saved = getProfile();
-      if (saved && (!profile || JSON.stringify(saved) !== JSON.stringify(profile))) {
+      console.log('[App] Profile after sync:', saved?.name || 'null');
+      // Always update profile from localStorage after sync - this is critical for cross-device sync
+      if (saved) {
         setProfile(saved);
         previousProfileRef.current = saved;
       }

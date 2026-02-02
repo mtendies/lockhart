@@ -94,9 +94,28 @@ export function useSupabaseSync() {
         return false;
       };
 
-      // Store profile (only if no local profile)
+      // Store profile - always update from Supabase for authenticated users
+      // This ensures profile data syncs correctly across devices
       if (results.profile) {
-        safeUpdate(SYNC_KEYS.profile, results.profile, false);
+        console.log('[Sync] Received profile from Supabase:', results.profile.name);
+        // For profiles, always prefer Supabase data when loading
+        // Local profile is only used as cache between sessions
+        const existing = getItem(SYNC_KEYS.profile);
+        if (!existing) {
+          console.log('[Sync] No local profile, using Supabase data');
+          setItem(SYNC_KEYS.profile, JSON.stringify(results.profile));
+        } else {
+          // Merge: use Supabase data but preserve any local-only fields
+          try {
+            const localProfile = JSON.parse(existing);
+            const merged = { ...localProfile, ...results.profile };
+            console.log('[Sync] Merged profile:', merged.name);
+            setItem(SYNC_KEYS.profile, JSON.stringify(merged));
+          } catch {
+            console.log('[Sync] Local profile corrupt, using Supabase data');
+            setItem(SYNC_KEYS.profile, JSON.stringify(results.profile));
+          }
+        }
       }
 
       // Store activities (only if Supabase has more)
