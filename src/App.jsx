@@ -613,9 +613,7 @@ function AppContent() {
           )}
 
           {view === 'training' && (
-            <div className="flex-1 overflow-y-auto">
-              <TrainingPage onNavigate={handleNavigate} />
-            </div>
+            <TrainingPage onNavigate={handleNavigate} />
           )}
 
           {view === 'profile' && (

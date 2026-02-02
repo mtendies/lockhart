@@ -12,9 +12,12 @@ import {
   LogOut,
   HelpCircle,
   MessageCircle,
+  Download,
+  Upload,
 } from 'lucide-react';
 import { getActiveProfile, getProfileColor } from '../profileStore';
 import { useAuth } from '../context/AuthContext';
+import { downloadBackup, parseBackupFile, restoreFromBackup } from '../lib/backupRestore';
 
 export default function Header({
   onNavigateToProfile,
@@ -27,6 +30,11 @@ export default function Header({
 }) {
   const { user, signOut } = useAuth();
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [restoreModalOpen, setRestoreModalOpen] = useState(false);
+  const [restoreStatus, setRestoreStatus] = useState(null); // null | 'selecting' | 'previewing' | 'restoring' | 'success' | 'error'
+  const [backupPreview, setBackupPreview] = useState(null);
+  const [restoreError, setRestoreError] = useState(null);
+  const fileInputRef = useRef(null);
   const dropdownRef = useRef(null);
   const activeProfile = getActiveProfile();
   const profileColor = activeProfile ? getProfileColor(activeProfile.id) : null;
@@ -49,7 +57,66 @@ export default function Header({
     action?.();
   }
 
+  // Backup handlers
+  function handleDownloadBackup() {
+    setDropdownOpen(false);
+    const result = downloadBackup();
+    // Could show a toast notification here
+    console.log('[Backup] Downloaded:', result.filename, result.summary);
+  }
+
+  function handleRestoreClick() {
+    setDropdownOpen(false);
+    setRestoreModalOpen(true);
+    setRestoreStatus('selecting');
+    setBackupPreview(null);
+    setRestoreError(null);
+  }
+
+  async function handleFileSelect(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setRestoreStatus('previewing');
+      const backup = await parseBackupFile(file);
+      setBackupPreview(backup);
+    } catch (err) {
+      setRestoreError(err.message);
+      setRestoreStatus('error');
+    }
+  }
+
+  async function handleConfirmRestore() {
+    if (!backupPreview) return;
+
+    try {
+      setRestoreStatus('restoring');
+      const results = await restoreFromBackup(backupPreview, !!user);
+      console.log('[Backup] Restore results:', results);
+      setRestoreStatus('success');
+      // Reload page after successful restore to apply changes
+      setTimeout(() => {
+        window.location.reload();
+      }, 1500);
+    } catch (err) {
+      setRestoreError(err.message);
+      setRestoreStatus('error');
+    }
+  }
+
+  function closeRestoreModal() {
+    setRestoreModalOpen(false);
+    setRestoreStatus(null);
+    setBackupPreview(null);
+    setRestoreError(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  }
+
   return (
+    <>
     <header className={`sticky top-0 z-40 backdrop-blur-sm border-b ${
       isTestProfile
         ? 'bg-violet-50/90 border-violet-200'
@@ -172,6 +239,24 @@ export default function Header({
                   </button>
                 </div>
 
+                {/* Backup & Restore */}
+                <div className="border-t border-gray-100 py-1">
+                  <button
+                    onClick={handleDownloadBackup}
+                    className="w-full px-4 py-2.5 flex items-center gap-3 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                  >
+                    <Download size={16} className="text-gray-400" />
+                    Download Backup
+                  </button>
+                  <button
+                    onClick={handleRestoreClick}
+                    className="w-full px-4 py-2.5 flex items-center gap-3 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                  >
+                    <Upload size={16} className="text-gray-400" />
+                    Restore from Backup
+                  </button>
+                </div>
+
                 {onOpenDevTools && (
                   <div className="border-t border-gray-100 py-1">
                     <button
@@ -208,5 +293,127 @@ export default function Header({
         </div>
       </div>
     </header>
+
+      {/* Restore Backup Modal */}
+      {restoreModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 animate-fade-in">
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
+            <h2 className="text-lg font-semibold text-gray-900 mb-4">
+              Restore from Backup
+            </h2>
+
+            {/* Hidden file input */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".json"
+              onChange={handleFileSelect}
+              className="hidden"
+            />
+
+            {restoreStatus === 'selecting' && (
+              <div className="space-y-4">
+                <p className="text-sm text-gray-600">
+                  Select a backup file to restore your data. This will replace your current data with the backup.
+                </p>
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-full py-3 px-4 border-2 border-dashed border-gray-300 rounded-lg text-gray-600 hover:border-primary-400 hover:text-primary-600 transition-colors flex items-center justify-center gap-2"
+                >
+                  <Upload size={20} />
+                  Choose Backup File
+                </button>
+              </div>
+            )}
+
+            {restoreStatus === 'previewing' && backupPreview && (
+              <div className="space-y-4">
+                <div className="bg-gray-50 rounded-lg p-4 space-y-2">
+                  <p className="text-sm font-medium text-gray-700">Backup Details:</p>
+                  <ul className="text-sm text-gray-600 space-y-1">
+                    <li>Profile: {backupPreview.summary?.profileName || 'Unknown'}</li>
+                    <li>Chats: {backupPreview.summary?.chatCount || 0}</li>
+                    <li>Activities: {backupPreview.summary?.activityCount || 0}</li>
+                    <li>Insights: {backupPreview.summary?.insightCount || 0}</li>
+                    <li>Created: {new Date(backupPreview.createdAt).toLocaleString()}</li>
+                  </ul>
+                </div>
+                <p className="text-sm text-amber-600 bg-amber-50 rounded-lg p-3">
+                  Warning: This will replace your current data. Make sure to download a backup first if needed.
+                </p>
+                <div className="flex gap-3">
+                  <button
+                    onClick={closeRestoreModal}
+                    className="flex-1 py-2 px-4 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleConfirmRestore}
+                    className="flex-1 py-2 px-4 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-colors"
+                  >
+                    Restore Data
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {restoreStatus === 'restoring' && (
+              <div className="text-center py-8">
+                <div className="w-8 h-8 border-2 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+                <p className="text-gray-600">Restoring your data...</p>
+              </div>
+            )}
+
+            {restoreStatus === 'success' && (
+              <div className="text-center py-8">
+                <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <svg className="w-6 h-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
+                <p className="text-gray-900 font-medium mb-2">Restore Complete!</p>
+                <p className="text-sm text-gray-600">Reloading the app...</p>
+              </div>
+            )}
+
+            {restoreStatus === 'error' && (
+              <div className="space-y-4">
+                <div className="bg-red-50 text-red-700 rounded-lg p-4 text-sm">
+                  {restoreError || 'An error occurred during restore'}
+                </div>
+                <div className="flex gap-3">
+                  <button
+                    onClick={closeRestoreModal}
+                    className="flex-1 py-2 px-4 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+                  >
+                    Close
+                  </button>
+                  <button
+                    onClick={() => {
+                      setRestoreStatus('selecting');
+                      setRestoreError(null);
+                    }}
+                    className="flex-1 py-2 px-4 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-colors"
+                  >
+                    Try Again
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Close button for selecting state */}
+            {restoreStatus === 'selecting' && (
+              <button
+                onClick={closeRestoreModal}
+                className="mt-4 w-full py-2 px-4 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+    </>
   );
 }

@@ -75,7 +75,7 @@ export default function TrainingPage({ onNavigate }) {
   }
 
   return (
-    <div className="flex flex-col h-full bg-gray-50/50">
+    <div className="flex flex-col flex-1 min-h-0 bg-gray-50/50">
       {/* Header */}
       <div className="bg-white border-b border-gray-100 flex-shrink-0">
         <div className="max-w-2xl mx-auto px-4 py-4">
