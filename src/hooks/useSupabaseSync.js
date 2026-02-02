@@ -43,7 +43,9 @@ export function useSupabaseSync() {
     try {
       const results = await dataService.loadAllData(user.id);
 
-      // Helper: only update localStorage if Supabase has data AND local is empty or Supabase has more
+      // Helper: merge data from Supabase with local data
+      // For arrays: merge by ID, keeping all unique items
+      // For objects: only set if local is empty
       const safeUpdate = (key, newData, isArray = false) => {
         if (!newData) return false;
         if (isArray && (!Array.isArray(newData) || newData.length === 0)) return false;
@@ -55,12 +57,29 @@ export function useSupabaseSync() {
           return true;
         }
 
-        // Has local data - only overwrite if Supabase has MORE items (for arrays)
+        // Has local data
         if (isArray) {
           try {
             const localData = JSON.parse(existing);
-            if (Array.isArray(localData) && newData.length > localData.length) {
+            if (!Array.isArray(localData)) {
+              // Local data is corrupt, overwrite
               setItem(key, JSON.stringify(newData));
+              return true;
+            }
+
+            // Merge arrays by ID - keep all unique items from both sources
+            const localIds = new Set(localData.map(item => item.id));
+            const merged = [...localData];
+
+            for (const item of newData) {
+              if (item.id && !localIds.has(item.id)) {
+                merged.push(item);
+              }
+            }
+
+            // Only update if we added new items
+            if (merged.length > localData.length) {
+              setItem(key, JSON.stringify(merged));
               return true;
             }
           } catch {
@@ -329,7 +348,7 @@ export function useSupabaseSync() {
   }, [user?.id]);
 
   // Auto-load from Supabase when authenticated
-  // CONSERVATIVE: Only loads if localStorage is completely empty
+  // ALWAYS loads missing data from Supabase, then pushes local data
   useEffect(() => {
     if (isAuthenticated && user?.id) {
       // Only run auto-sync once per session
@@ -340,25 +359,15 @@ export function useSupabaseSync() {
         return;
       }
 
-      // Only load from Supabase if there's NO local profile data
-      // This prevents overwriting existing local data
-      const hasLocalProfile = getItem(SYNC_KEYS.profile);
-      const hasLocalActivities = getItem(SYNC_KEYS.activities);
-
-      // If user has ANY local data, don't auto-pull from Supabase
-      // They can manually trigger a sync if needed
-      if (!hasLocalProfile && !hasLocalActivities) {
-        console.log('[Sync] No local data found, loading from Supabase...');
-        loadFromSupabase().then(() => {
-          localStorage.setItem('health-advisor-last-supabase-sync', Date.now().toString());
-          sessionStorage.setItem(syncKey, 'true');
-        });
-      } else {
-        console.log('[Sync] Local data exists, background sync to Supabase');
+      // Always load from Supabase to get any missing data (conversations, nutrition, etc.)
+      // The safeUpdate helper prevents overwriting local data that has more items
+      console.log('[Sync] Loading data from Supabase...');
+      loadFromSupabase().then(() => {
+        localStorage.setItem('health-advisor-last-supabase-sync', Date.now().toString());
         sessionStorage.setItem(syncKey, 'true');
-        // Push in background - errors are handled silently after first occurrence
+        // After loading, push any local data that might be newer/missing from Supabase
         pushToSupabase();
-      }
+      });
     }
   }, [isAuthenticated, user?.id, loadFromSupabase, pushToSupabase]);
 
