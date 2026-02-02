@@ -142,12 +142,16 @@ export function useSupabaseSync() {
       }
 
       // Store nutrition calibration - now stored in users_profile.nutrition_data
-      // Simple: exact localStorage format stored as JSONB, no transformation needed
+      console.log('[Sync] results.nutritionCalibration:', results.nutritionCalibration);
+      console.log('[Sync] typeof results.nutritionCalibration:', typeof results.nutritionCalibration);
+
       if (results.nutritionCalibration) {
-        console.log('[Sync] Nutrition data from Supabase - saving to localStorage');
-        setItem(SYNC_KEYS.nutrition, JSON.stringify(results.nutritionCalibration));
+        const dataStr = JSON.stringify(results.nutritionCalibration);
+        console.log('[Sync] Saving nutrition to localStorage, length:', dataStr.length);
+        setItem(SYNC_KEYS.nutrition, dataStr);
+        console.log('[Sync] Nutrition saved to key:', SYNC_KEYS.nutrition);
       } else {
-        console.log('[Sync] No nutrition data in Supabase');
+        console.log('[Sync] NO nutrition data from Supabase - results.nutritionCalibration is falsy');
       }
 
       // Store notes (only if no local notes)

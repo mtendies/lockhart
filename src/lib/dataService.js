@@ -212,21 +212,27 @@ const transformDbPlaybook = (dbPlaybook) => {
 // ============================================
 
 export const getNutritionCalibration = async (userId) => {
+  console.log('[dataService] getNutritionCalibration called with userId:', userId);
+
   // Nutrition is now stored in users_profile.nutrition_data
-  // Just fetch the profile and return the nutrition_data field
   const { data, error } = await supabase
     .from('users_profile')
     .select('nutrition_data')
     .eq('id', userId)
     .single();
 
+  console.log('[dataService] Supabase response - data:', JSON.stringify(data));
+  console.log('[dataService] Supabase response - error:', error);
+
   if (error && error.code !== 'PGRST116') {
     console.error('[dataService] Error fetching nutrition:', error);
     return { data: null, error };
   }
 
-  console.log('[dataService] Nutrition data from profile:', data?.nutrition_data ? 'EXISTS' : 'NULL');
-  return { data: data?.nutrition_data || null, error: null };
+  const nutritionData = data?.nutrition_data;
+  console.log('[dataService] nutrition_data field:', nutritionData ? 'EXISTS with ' + Object.keys(nutritionData).length + ' keys' : 'NULL or UNDEFINED');
+
+  return { data: nutritionData || null, error: null };
 };
 
 export const upsertNutritionCalibration = async (userId, calibrationData) => {
