@@ -11,7 +11,7 @@
 import { getItem, setItem, removeItem } from './storageHelper';
 import { getProfile } from './store';
 import { logActivity, ACTIVITY_TYPES } from './activityLogStore';
-import { syncNutritionDay } from './lib/syncHelper';
+import { syncNutritionDay, syncNutritionCalibration } from './lib/syncHelper';
 
 const STORAGE_KEY = 'health-advisor-nutrition-calibration';
 const PROFILE_KEY = 'health-advisor-nutrition-profile';
@@ -389,6 +389,8 @@ export function getCalibrationData() {
  */
 export function saveCalibrationData(data) {
   setItem(STORAGE_KEY, JSON.stringify(data));
+  // Sync to Supabase in background
+  syncNutritionCalibration(data);
 }
 
 /**
@@ -590,7 +592,7 @@ export function completeDay(day) {
     }
 
     // Check if all days are complete
-    const allComplete = CALIBRATION_DAYS.every(d => data.days[d].completed);
+    const allComplete = CALIBRATION_DAYS.every(d => data.days[d]?.completed);
     if (allComplete && !data.completedAt) {
       data.completedAt = new Date().toISOString();
       // Generate the nutrition profile
@@ -668,7 +670,7 @@ export function canCompleteDay(day, profile = null) {
  */
 export function getCompletedDaysCount() {
   const data = getCalibrationData();
-  return CALIBRATION_DAYS.filter(day => data.days[day].completed).length;
+  return CALIBRATION_DAYS.filter(day => data.days[day]?.completed).length;
 }
 
 /**
@@ -683,7 +685,8 @@ export function getRemainingDaysCount() {
  */
 export function isCalibrationComplete() {
   const data = getCalibrationData();
-  return data.completedAt !== null;
+  // Must check for both null AND undefined
+  return !!data.completedAt;
 }
 
 /**

@@ -120,6 +120,18 @@ export function syncNutritionDay(date, meals, complete) {
   processSyncQueue();
 }
 
+// Sync entire nutrition calibration to Supabase
+export function syncNutritionCalibration(calibrationData) {
+  syncQueue.push({
+    type: 'nutritionCalibration',
+    data: calibrationData,
+    syncFn: async (userId, data) => {
+      return dataService.upsertNutritionCalibration(userId, data);
+    },
+  });
+  processSyncQueue();
+}
+
 // Delete activity from Supabase
 export async function deleteActivityFromSupabase(activityId) {
   const userId = await getCurrentUserId();
@@ -167,6 +179,7 @@ export default {
   syncInsight,
   syncCheckin,
   syncNutritionDay,
+  syncNutritionCalibration,
   deleteActivityFromSupabase,
   deleteConversationFromSupabase,
   deleteInsightFromSupabase,

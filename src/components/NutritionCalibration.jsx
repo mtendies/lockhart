@@ -450,7 +450,7 @@ function CompletedDaysDropdown({ progress, calibrationData, onEditDay }) {
     const dayData = calibrationData.days[day];
     const isToday = isDayToday(day);
 
-    if (dayData.completed) return { icon: '✓', color: 'text-green-600 bg-green-100' };
+    if (dayData?.completed) return { icon: '✓', color: 'text-green-600 bg-green-100' };
     if (isToday) return { icon: '●', color: 'text-blue-600 bg-blue-100' };
     if (isDayInPast(day)) return { icon: '○', color: 'text-amber-600 bg-amber-100' };
     return { icon: '○', color: 'text-gray-400 bg-gray-100' };
@@ -508,7 +508,7 @@ function CompletedDaysDropdown({ progress, calibrationData, onEditDay }) {
                       {isToday && <span className="text-blue-600 ml-1">(Today)</span>}
                     </span>
                     <span className="text-xs text-gray-500 ml-2">
-                      {dayData.completed ? (
+                      {dayData?.completed ? (
                         `Complete${calories > 0 ? ` (${calories.toLocaleString()} cal)` : ''}`
                       ) : isToday ? (
                         `In Progress${calories > 0 ? ` (${calories.toLocaleString()} cal)` : ''}`
@@ -521,7 +521,7 @@ function CompletedDaysDropdown({ progress, calibrationData, onEditDay }) {
                   </div>
                 </div>
 
-                {dayData.completed && (
+                {dayData?.completed && (
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
@@ -1759,10 +1759,10 @@ function DayEntry({
   nextDay,
   onDataChange,
 }) {
-  const dayCompleted = dayData.completed;
+  const dayCompleted = dayData?.completed;
   const dayInPast = isDayInPast(day);
   const dayInFuture = isDayInFuture(day);
-  const meals = dayData.meals || [];
+  const meals = dayData?.meals || [];
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -2173,8 +2173,8 @@ export default function NutritionCalibration({ onComplete, compact = false, prof
   const sortedDays = [...CALIBRATION_DAYS].sort((a, b) => {
     const aToday = isDayToday(a);
     const bToday = isDayToday(b);
-    const aCompleted = calibrationData.days[a].completed;
-    const bCompleted = calibrationData.days[b].completed;
+    const aCompleted = calibrationData.days[a]?.completed;
+    const bCompleted = calibrationData.days[b]?.completed;
     const aPast = isDayInPast(a);
     const bPast = isDayInPast(b);
 
@@ -2198,7 +2198,7 @@ export default function NutritionCalibration({ onComplete, compact = false, prof
 
   // Filter out future days in compact mode
   const visibleDays = compact
-    ? sortedDays.filter(day => isDayToday(day) || isDayInPast(day) || calibrationData.days[day].completed)
+    ? sortedDays.filter(day => isDayToday(day) || isDayInPast(day) || calibrationData.days[day]?.completed)
     : sortedDays;
 
   // Get today's day data for calorie progress
@@ -2251,10 +2251,10 @@ export default function NutritionCalibration({ onComplete, compact = false, prof
         {visibleDays.map((day) => {
           const dayData = calibrationData.days[day];
           const isToday = isDayToday(day);
-          const isExpanded = expandedDay === day || (isToday && !dayData.completed && expandedDay === null);
+          const isExpanded = expandedDay === day || (isToday && !dayData?.completed && expandedDay === null);
 
           // On weekends, only show completed days (skip incomplete future/past days)
-          if (!todayDay && !dayData.completed) {
+          if (!todayDay && !dayData?.completed) {
             return null;
           }
 

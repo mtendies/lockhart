@@ -215,23 +215,31 @@ export const getNutritionCalibration = async (userId) => {
 
   if (error) return { data: null, error };
 
-  // Transform to app format
+  // Transform to app format - use startedAt/completedAt that app expects
   const calibration = {
     days: {},
-    startDate: null,
-    isComplete: false,
+    startedAt: null,
+    completedAt: null,
   };
 
   if (data && data.length > 0) {
-    calibration.startDate = data[0].date;
+    calibration.startedAt = data[0].date;
+    const completedCount = data.filter(d => d.complete).length;
+
     data.forEach((entry) => {
-      const dayName = new Date(entry.date).toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
+      const dayName = new Date(entry.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
+      // entry.meals contains the full day data including meals array
       calibration.days[dayName] = {
         ...entry.meals,
         completed: entry.complete,
+        completedAt: entry.complete ? entry.updated_at : null,
       };
     });
-    calibration.isComplete = data.filter(d => d.complete).length >= 5;
+
+    // If all 5 days are complete, set completedAt
+    if (completedCount >= 5) {
+      calibration.completedAt = data[data.length - 1].updated_at || new Date().toISOString();
+    }
   }
 
   return { data: calibration, error: null };
@@ -248,6 +256,43 @@ export const upsertNutritionDay = async (userId, date, meals, complete = false) 
     })
     .select();
   return { data, error };
+};
+
+// Upsert entire calibration data (all days at once)
+export const upsertNutritionCalibration = async (userId, calibrationData) => {
+  if (!calibrationData?.days) return { data: null, error: 'No calibration data' };
+
+  const errors = [];
+  const dayOrder = { monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5 };
+
+  // Get the start date from calibrationData or calculate from current week
+  const getDateForDay = (dayName) => {
+    const today = new Date();
+    const todayDay = today.getDay(); // 0=Sun, 1=Mon, etc.
+    const targetDay = dayOrder[dayName];
+    const diff = targetDay - todayDay;
+    const targetDate = new Date(today);
+    targetDate.setDate(today.getDate() + diff);
+    return targetDate.toISOString().split('T')[0];
+  };
+
+  for (const [dayName, dayData] of Object.entries(calibrationData.days)) {
+    if (!dayData) continue;
+
+    const date = getDateForDay(dayName);
+    const { error } = await supabase
+      .from('nutrition_calibration')
+      .upsert({
+        user_id: userId,
+        date,
+        meals: dayData,
+        complete: dayData.completed || false,
+      });
+
+    if (error) errors.push({ day: dayName, error });
+  }
+
+  return { data: 'ok', errors: errors.length > 0 ? errors : null };
 };
 
 // ============================================
