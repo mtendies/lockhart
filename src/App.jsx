@@ -6,6 +6,7 @@ import FeedbackButton from './components/FeedbackButton';
 import AdminFeedback from './components/AdminFeedback';
 import * as dataService from './lib/dataService';
 import { useSimpleSync } from './hooks/useSimpleSync';
+import { migrateToNewSync, verifyMigration } from './lib/migrateSyncData';
 
 // Error boundary to catch and display React errors
 class ErrorBoundary extends Component {
@@ -78,8 +79,9 @@ function AppContent() {
   const { user, loading: authLoading, signOut } = useAuth();
   const { syncStatus, refresh, pushAll, isReady, isLoading } = useSimpleSync();
 
-  // Expose recovery function globally for console access
+  // Expose sync functions globally for console access
   useEffect(() => {
+    // Pull fresh data from Supabase
     window.__forceSupabasePull = async () => {
       console.log('Forcing data recovery from Supabase...');
       const result = await refresh();
@@ -90,10 +92,19 @@ function AppContent() {
       }
       return result;
     };
+
+    // Push all localStorage to Supabase
     window.__pushAllToSupabase = pushAll;
+
+    // ONE-TIME MIGRATION: Push localStorage to new JSONB columns
+    window.__migrateToNewSync = migrateToNewSync;
+    window.__verifyMigration = verifyMigration;
+
     return () => {
       delete window.__forceSupabasePull;
       delete window.__pushAllToSupabase;
+      delete window.__migrateToNewSync;
+      delete window.__verifyMigration;
     };
   }, [refresh, pushAll]);
   const [profile, setProfile] = useState(null);
