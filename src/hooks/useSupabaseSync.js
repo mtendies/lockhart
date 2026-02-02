@@ -140,11 +140,28 @@ export function useSupabaseSync() {
       }
 
       // Store nutrition calibration - Supabase is SOURCE OF TRUTH
-      // Always use Supabase data if it has actual day entries
-      if (results.nutritionCalibration && Object.keys(results.nutritionCalibration.days || {}).length > 0) {
-        console.log('[Sync] Received nutrition calibration from Supabase:', Object.keys(results.nutritionCalibration.days));
-        setItem(SYNC_KEYS.nutrition, JSON.stringify(results.nutritionCalibration));
-        console.log('[Sync] Nutrition calibration saved to localStorage from Supabase');
+      // Always use Supabase data if it has actual day entries with data
+      console.log('[Sync] Checking nutrition calibration...');
+      console.log('[Sync] results.nutritionCalibration:', results.nutritionCalibration);
+
+      if (results.nutritionCalibration) {
+        const days = results.nutritionCalibration.days || {};
+        const daysWithData = Object.entries(days).filter(([_, data]) => data !== null);
+        console.log('[Sync] Nutrition days with data:', daysWithData.length, daysWithData.map(([day]) => day));
+
+        if (daysWithData.length > 0) {
+          console.log('[Sync] Saving nutrition calibration to localStorage...');
+          setItem(SYNC_KEYS.nutrition, JSON.stringify(results.nutritionCalibration));
+          console.log('[Sync] Nutrition calibration saved! Key:', SYNC_KEYS.nutrition);
+
+          // Verify it was saved
+          const verify = getItem(SYNC_KEYS.nutrition);
+          console.log('[Sync] Verification - localStorage now has:', verify ? 'data' : 'nothing');
+        } else {
+          console.log('[Sync] No nutrition days with data found, skipping save');
+        }
+      } else {
+        console.log('[Sync] No nutrition calibration in results');
       }
 
       // Store notes (only if no local notes)

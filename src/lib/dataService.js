@@ -207,40 +207,69 @@ const transformDbPlaybook = (dbPlaybook) => {
 // ============================================
 
 export const getNutritionCalibration = async (userId) => {
+  console.log('[dataService] getNutritionCalibration called for user:', userId);
+
   const { data, error } = await supabase
     .from('nutrition_calibration')
     .select('*')
     .eq('user_id', userId)
     .order('date', { ascending: true });
 
+  console.log('[dataService] Supabase nutrition_calibration raw data:', data);
+  console.log('[dataService] Supabase nutrition_calibration error:', error);
+
   if (error) return { data: null, error };
 
-  // Transform to app format - use startedAt/completedAt that app expects
+  // Transform to app format - must match what getCalibrationData() expects
   const calibration = {
-    days: {},
+    days: {
+      monday: null,
+      tuesday: null,
+      wednesday: null,
+      thursday: null,
+      friday: null,
+    },
     startedAt: null,
     completedAt: null,
+    currentDay: 'monday', // Required by app
   };
 
   if (data && data.length > 0) {
-    calibration.startedAt = data[0].date;
+    calibration.startedAt = data[0].date + 'T00:00:00.000Z';
     const completedCount = data.filter(d => d.complete).length;
 
     data.forEach((entry) => {
-      const dayName = new Date(entry.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
+      // Convert date string to day name
+      const dateObj = new Date(entry.date + 'T12:00:00');
+      const dayName = dateObj.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
+
+      console.log('[dataService] Converting date:', entry.date, '-> dayName:', dayName);
+
       // entry.meals contains the full day data including meals array
-      calibration.days[dayName] = {
-        ...entry.meals,
-        completed: entry.complete,
-        completedAt: entry.complete ? entry.updated_at : null,
-      };
+      if (['monday', 'tuesday', 'wednesday', 'thursday', 'friday'].includes(dayName)) {
+        calibration.days[dayName] = {
+          ...entry.meals,
+          completed: entry.complete || false,
+          completedAt: entry.complete ? entry.updated_at : null,
+        };
+      }
     });
+
+    // Find the most recent day with data to set as currentDay
+    const daysWithData = Object.entries(calibration.days)
+      .filter(([_, data]) => data !== null)
+      .map(([day]) => day);
+    if (daysWithData.length > 0) {
+      calibration.currentDay = daysWithData[daysWithData.length - 1];
+    }
 
     // If all 5 days are complete, set completedAt
     if (completedCount >= 5) {
       calibration.completedAt = data[data.length - 1].updated_at || new Date().toISOString();
     }
   }
+
+  console.log('[dataService] Transformed nutrition calibration:', JSON.stringify(calibration, null, 2));
 
   return { data: calibration, error: null };
 };
