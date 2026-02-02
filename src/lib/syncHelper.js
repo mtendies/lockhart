@@ -19,6 +19,10 @@ async function getCurrentUserId() {
 let syncQueue = [];
 let syncTimeout = null;
 
+// Track failed syncs to avoid spam
+const failedSyncs = new Map();
+const FAIL_COOLDOWN = 60000; // Don't retry failed syncs for 60 seconds
+
 // Process sync queue with debouncing
 function processSyncQueue() {
   if (syncTimeout) clearTimeout(syncTimeout);
@@ -29,16 +33,39 @@ function processSyncQueue() {
 
     const userId = await getCurrentUserId();
     if (!userId) {
-      console.log('[Sync] No user ID, skipping sync');
+      // Only log once per session
+      if (!processSyncQueue._noUserLogged) {
+        console.log('[Sync] No user ID, skipping sync');
+        processSyncQueue._noUserLogged = true;
+      }
       return;
     }
+    processSyncQueue._noUserLogged = false;
 
     for (const item of items) {
+      // Skip if this type recently failed
+      const lastFail = failedSyncs.get(item.type);
+      if (lastFail && Date.now() - lastFail < FAIL_COOLDOWN) {
+        continue; // Skip silently
+      }
+
       try {
-        await item.syncFn(userId, item.data);
-        console.log(`[Sync] Synced ${item.type} to Supabase`);
+        const result = await item.syncFn(userId, item.data);
+        if (result?.error) {
+          // Log error once, then cooldown
+          if (!lastFail || Date.now() - lastFail > FAIL_COOLDOWN) {
+            console.warn(`[Sync] ${item.type} sync issue (will retry in 60s):`, result.error?.message || result.error);
+          }
+          failedSyncs.set(item.type, Date.now());
+        } else {
+          failedSyncs.delete(item.type); // Clear on success
+          console.log(`[Sync] Synced ${item.type} to Supabase`);
+        }
       } catch (err) {
-        console.error(`[Sync] Error syncing ${item.type}:`, err);
+        if (!lastFail || Date.now() - lastFail > FAIL_COOLDOWN) {
+          console.warn(`[Sync] ${item.type} error (will retry in 60s):`, err.message || err);
+        }
+        failedSyncs.set(item.type, Date.now());
       }
     }
   }, 1000); // Debounce for 1 second

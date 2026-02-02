@@ -313,6 +313,12 @@ export function useSupabaseSync() {
   // CONSERVATIVE: Only loads if localStorage is completely empty
   useEffect(() => {
     if (isAuthenticated && user?.id) {
+      // Only run auto-sync once per session
+      const syncKey = `health-advisor-sync-done-${user.id}`;
+      if (sessionStorage.getItem(syncKey)) {
+        return; // Already synced this session
+      }
+
       // Only load from Supabase if there's NO local profile data
       // This prevents overwriting existing local data
       const hasLocalProfile = getItem(SYNC_KEYS.profile);
@@ -324,11 +330,12 @@ export function useSupabaseSync() {
         console.log('[Sync] No local data found, loading from Supabase...');
         loadFromSupabase().then(() => {
           localStorage.setItem('health-advisor-last-supabase-sync', Date.now().toString());
+          sessionStorage.setItem(syncKey, 'true');
         });
       } else {
-        console.log('[Sync] Local data exists, skipping Supabase pull to preserve data');
-        // Instead, push local data to Supabase (background, won't block)
-        // This ensures Supabase gets the local data
+        console.log('[Sync] Local data exists, background sync to Supabase');
+        sessionStorage.setItem(syncKey, 'true');
+        // Push in background - errors are handled silently after first occurrence
         pushToSupabase();
       }
     }

@@ -184,7 +184,7 @@ export const upsertPlaybook = async (userId, playbook) => {
 
   const { data, error } = await supabase
     .from('playbook')
-    .upsert(dbPlaybook)
+    .upsert(dbPlaybook, { onConflict: 'user_id' })
     .select();
   return { data: data?.[0] ? transformDbPlaybook(data[0]) : null, error };
 };
@@ -387,28 +387,39 @@ export const getConversation = async (conversationId) => {
 };
 
 export const upsertConversation = async (userId, conversation) => {
+  // Validate that ID is a valid UUID if present
+  const isValidUUID = (id) => {
+    if (!id) return false;
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    return uuidRegex.test(id);
+  };
+
   const dbConversation = {
-    id: conversation.id,
     user_id: userId,
-    title: conversation.title,
-    category: conversation.category,
-    messages: conversation.messages,
-    bookmarks: conversation.bookmarks,
+    title: conversation.title || 'New Chat',
+    category: conversation.category || null,
+    messages: conversation.messages || [],
+    bookmarks: conversation.bookmarks || [],
     archived: conversation.archived || false,
     last_activity: conversation.lastActivity || new Date().toISOString(),
     updated_at: new Date().toISOString(),
   };
 
-  // Remove id if it's a new conversation
-  if (!conversation.id) {
-    delete dbConversation.id;
+  // Only include id if it's a valid UUID
+  if (isValidUUID(conversation.id)) {
+    dbConversation.id = conversation.id;
   }
 
-  const { data, error } = await supabase
-    .from('chat_conversations')
-    .upsert(dbConversation)
-    .select();
-  return { data: data?.[0] ? transformDbConversation(data[0]) : null, error };
+  try {
+    const { data, error } = await supabase
+      .from('chat_conversations')
+      .upsert(dbConversation, { onConflict: 'id' })
+      .select();
+    return { data: data?.[0] ? transformDbConversation(data[0]) : null, error };
+  } catch (err) {
+    console.error('[dataService] upsertConversation error:', err);
+    return { data: null, error: err };
+  }
 };
 
 export const deleteConversation = async (conversationId) => {
