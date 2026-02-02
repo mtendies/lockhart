@@ -96,6 +96,15 @@ function AppContent() {
   const [profile, setProfile] = useState(null);
   const [notes, setNotes] = useState({});
   const [loading, setLoading] = useState(true);
+  const [syncWaitExpired, setSyncWaitExpired] = useState(false);
+
+  // Timeout for waiting on sync - don't wait forever
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setSyncWaitExpired(true);
+    }, 5000); // Wait max 5 seconds for sync
+    return () => clearTimeout(timer);
+  }, []);
   const [view, setView] = useState('home');
   const [scrollTarget, setScrollTarget] = useState(null);
   const [editingProfile, setEditingProfile] = useState(false);
@@ -437,10 +446,23 @@ function AppContent() {
     setTimeout(() => setNotification(null), 5000);
   }
 
-  if (loading) {
+  if (loading || authLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="w-8 h-8 border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  // If authenticated but no profile and sync hasn't completed yet, wait for sync
+  // This prevents showing Onboarding before Supabase data has loaded
+  // 'idle' means sync hasn't started yet, 'syncing' means it's in progress
+  // But don't wait forever - timeout after 5 seconds
+  if (user && !profile && (syncStatus === 'syncing' || syncStatus === 'idle') && !syncWaitExpired) {
+    return (
+      <div className="min-h-screen flex items-center justify-center flex-col gap-3">
+        <div className="w-8 h-8 border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin" />
+        <p className="text-sm text-gray-500">Loading your profile...</p>
       </div>
     );
   }

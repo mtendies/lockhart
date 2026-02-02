@@ -316,7 +316,9 @@ export function useSupabaseSync() {
       // Only run auto-sync once per session
       const syncKey = `health-advisor-sync-done-${user.id}`;
       if (sessionStorage.getItem(syncKey)) {
-        return; // Already synced this session
+        // Already synced this session - mark as synced so UI doesn't wait
+        setSyncStatus('synced');
+        return;
       }
 
       // Only load from Supabase if there's NO local profile data
