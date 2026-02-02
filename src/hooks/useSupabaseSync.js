@@ -370,16 +370,17 @@ export function useSupabaseSync() {
       }
 
       // Always load from Supabase to get any missing data (conversations, nutrition, etc.)
-      // The safeUpdate helper prevents overwriting local data that has more items
+      // IMPORTANT: Do NOT push back to Supabase automatically!
+      // Supabase is the source of truth. Only push when user makes NEW changes.
       console.log('[Sync] Loading data from Supabase...');
       loadFromSupabase().then(() => {
         localStorage.setItem('health-advisor-last-supabase-sync', Date.now().toString());
         sessionStorage.setItem(syncKey, 'true');
-        // After loading, push any local data that might be newer/missing from Supabase
-        pushToSupabase();
+        // DO NOT call pushToSupabase() here - it would overwrite Supabase with stale local data!
+        // Profile sync happens via syncHelper.js when user SAVES changes
       });
     }
-  }, [isAuthenticated, user?.id, loadFromSupabase, pushToSupabase]);
+  }, [isAuthenticated, user?.id, loadFromSupabase]);
 
   return {
     syncStatus,
