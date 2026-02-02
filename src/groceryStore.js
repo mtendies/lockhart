@@ -1,5 +1,5 @@
 import { getItem, setItem, removeItem } from './storageHelper';
-import { syncGrocery } from './lib/syncHelper';
+import { syncGrocery } from './lib/simpleSync';
 
 const STORAGE_KEY = 'health-advisor-groceries';
 
@@ -30,8 +30,8 @@ export function getGroceryData() {
 
 export function saveGroceryData(data) {
   setItem(STORAGE_KEY, JSON.stringify(data));
-  // Sync to Supabase in background
-  syncGrocery(data);
+  // Sync to Supabase in background (debounced)
+  syncGrocery();
 }
 
 export function addGroceryOrder(order) {

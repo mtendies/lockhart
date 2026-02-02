@@ -1,4 +1,5 @@
 import { getItem, setItem, removeItem } from './storageHelper';
+import { syncNotes } from './lib/simpleSync';
 
 const STORAGE_KEY = 'health-advisor-notes';
 
@@ -21,8 +22,11 @@ export function addNote(section, text) {
 
 export function saveNotes(notes) {
   setItem(STORAGE_KEY, JSON.stringify(notes));
+  // Sync to Supabase in background (debounced)
+  syncNotes();
 }
 
 export function clearNotes() {
   removeItem(STORAGE_KEY);
+  syncNotes();
 }

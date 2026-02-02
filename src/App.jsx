@@ -5,7 +5,7 @@ import PreOnboardingIntro from './components/PreOnboardingIntro';
 import FeedbackButton from './components/FeedbackButton';
 import AdminFeedback from './components/AdminFeedback';
 import * as dataService from './lib/dataService';
-import { useSupabaseSync } from './hooks/useSupabaseSync';
+import { useSimpleSync } from './hooks/useSimpleSync';
 
 // Error boundary to catch and display React errors
 class ErrorBoundary extends Component {
@@ -76,23 +76,26 @@ import { getLearnedInsights } from './learnedInsightsStore';
 
 function AppContent() {
   const { user, loading: authLoading, signOut } = useAuth();
-  const { syncStatus, loadFromSupabase, pushToSupabase, syncToSupabase, forceLoadFromSupabase, refreshFromCloud, supabaseProfile, dataVersion } = useSupabaseSync();
+  const { syncStatus, refresh, pushAll, isReady, isLoading } = useSimpleSync();
 
   // Expose recovery function globally for console access
   useEffect(() => {
     window.__forceSupabasePull = async () => {
       console.log('Forcing data recovery from Supabase...');
-      const result = await forceLoadFromSupabase();
-      if (result) {
-        console.log('Data restored! Reloading page...');
-        setTimeout(() => window.location.reload(), 1000);
+      const result = await refresh();
+      if (result?.success) {
+        console.log('Data restored! Page will reload...');
       } else {
         console.log('No data found in Supabase or recovery failed.');
       }
       return result;
     };
-    return () => { delete window.__forceSupabasePull; };
-  }, [forceLoadFromSupabase]);
+    window.__pushAllToSupabase = pushAll;
+    return () => {
+      delete window.__forceSupabasePull;
+      delete window.__pushAllToSupabase;
+    };
+  }, [refresh, pushAll]);
   const [profile, setProfile] = useState(null);
   const [notes, setNotes] = useState({});
   const [loading, setLoading] = useState(true);
@@ -198,32 +201,24 @@ function AppContent() {
   }, []);
 
   // Reload all data after Supabase sync completes
-  // CRITICAL: Use supabaseProfile as source of truth for authenticated users
+  // Data is loaded directly into localStorage by simpleSync, so we re-read from localStorage
   useEffect(() => {
-    if (syncStatus === 'synced') {
-      console.log('[App] Supabase sync complete');
-      console.log('[App] supabaseProfile:', supabaseProfile?.name || 'null');
+    if (isReady) {
+      console.log('[App] Supabase sync complete, reloading data from localStorage');
 
-      // Use Supabase profile as source of truth
-      if (supabaseProfile) {
-        console.log('[App] Using profile from Supabase:', supabaseProfile.name);
-        setProfile(supabaseProfile);
-        previousProfileRef.current = supabaseProfile;
-      } else {
-        // Fallback to localStorage only if Supabase has no profile
-        const saved = getProfile();
-        console.log('[App] No Supabase profile, localStorage profile:', saved?.name || 'null');
-        if (saved) {
-          setProfile(saved);
-          previousProfileRef.current = saved;
-        }
+      // Re-read profile from localStorage (which now has Supabase data)
+      const saved = getProfile();
+      if (saved) {
+        console.log('[App] Loaded profile:', saved.name);
+        setProfile(saved);
+        previousProfileRef.current = saved;
       }
 
       setNotes(getNotes());
       setPlaybook(getPlaybook());
       setActivityLogs(getActivitiesThisWeek());
     }
-  }, [syncStatus, supabaseProfile]);
+  }, [isReady]);
 
   // Refresh playbook from localStorage - call this after any playbook modification
   function refreshPlaybook() {
@@ -478,7 +473,7 @@ function AppContent() {
   // This prevents showing Onboarding before Supabase data has loaded
   // 'idle' means sync hasn't started yet, 'syncing' means it's in progress
   // But don't wait forever - timeout after 10 seconds
-  if (user && !profile && (syncStatus === 'syncing' || syncStatus === 'idle') && !syncWaitExpired) {
+  if (user && !profile && isLoading && !syncWaitExpired) {
     return (
       <div className="min-h-screen flex items-center justify-center flex-col gap-3">
         <div className="w-8 h-8 border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin" />
@@ -487,22 +482,7 @@ function AppContent() {
     );
   }
 
-  // CRITICAL: If sync completed and Supabase has a profile, use it directly
-  // This handles the race condition where useEffect hasn't updated profile state yet
-  const effectiveProfile = profile || supabaseProfile;
-
-  // If we have supabaseProfile but profile state isn't set yet, set it now
-  // This ensures profile state is in sync for child components
-  if (supabaseProfile && !profile) {
-    console.log('[App] Setting profile state from supabaseProfile:', supabaseProfile.name);
-    // Use setTimeout to avoid setting state during render
-    setTimeout(() => {
-      setProfile(supabaseProfile);
-      previousProfileRef.current = supabaseProfile;
-    }, 0);
-  }
-
-  if (!effectiveProfile || editingProfile) {
+  if (!profile || editingProfile) {
     const wasEditing = editingProfile;
     return (
       <>
@@ -511,7 +491,7 @@ function AppContent() {
             handleOnboardingComplete(data, wasEditing);
             setEditingProfile(false);
           }}
-          initialData={editingProfile ? effectiveProfile : undefined}
+          initialData={editingProfile ? profile : undefined}
           onCancel={editingProfile ? () => setEditingProfile(false) : undefined}
         />
         {/* Dev Tools available even during onboarding */}
@@ -577,8 +557,7 @@ function AppContent() {
                 onNavigate={handleNavigate}
                 onOpenCheckIn={handleOpenCheckIn}
                 syncStatus={syncStatus}
-                onRefresh={refreshFromCloud}
-                dataVersion={dataVersion}
+                onRefresh={refresh}
               />
             </div>
           )}

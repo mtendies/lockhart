@@ -1,0 +1,123 @@
+/**
+ * useSimpleSync - React hook for simple Supabase sync
+ *
+ * Usage in App.jsx:
+ *   const { syncStatus, refresh } = useSimpleSync();
+ */
+
+import { useEffect, useState, useCallback, useRef } from 'react';
+import { useAuth } from '../context/AuthContext';
+import {
+  loadFromSupabase,
+  syncAllToSupabase,
+  syncToSupabase,
+} from '../lib/simpleSync';
+
+export function useSimpleSync() {
+  const { user, isAuthenticated } = useAuth();
+  const [syncStatus, setSyncStatus] = useState('idle'); // idle | loading | ready | error
+  const [lastSynced, setLastSynced] = useState(null);
+  const [error, setError] = useState(null);
+  const hasLoadedRef = useRef(false);
+
+  // Load from Supabase on mount (when authenticated)
+  useEffect(() => {
+    if (!isAuthenticated || !user?.id) {
+      setSyncStatus('idle');
+      return;
+    }
+
+    // Only load once per session
+    if (hasLoadedRef.current) {
+      return;
+    }
+
+    async function doLoad() {
+      setSyncStatus('loading');
+      setError(null);
+
+      console.log('[useSimpleSync] Loading data from Supabase...');
+      const result = await loadFromSupabase();
+
+      if (result.success) {
+        setSyncStatus('ready');
+        setLastSynced(new Date());
+        hasLoadedRef.current = true;
+        console.log('[useSimpleSync] Load complete:', result.loaded);
+
+        // Trigger a page refresh to show the loaded data
+        // This ensures all components re-read from localStorage
+        if (result.loaded.length > 0) {
+          window.dispatchEvent(new Event('storage'));
+        }
+      } else {
+        setSyncStatus('error');
+        setError(result.errors.join(', '));
+        console.error('[useSimpleSync] Load failed:', result.errors);
+      }
+    }
+
+    doLoad();
+  }, [isAuthenticated, user?.id]);
+
+  // Manual refresh function
+  const refresh = useCallback(async () => {
+    if (!isAuthenticated || !user?.id) {
+      return { success: false, error: 'Not authenticated' };
+    }
+
+    setSyncStatus('loading');
+    setError(null);
+
+    const result = await loadFromSupabase();
+
+    if (result.success) {
+      setSyncStatus('ready');
+      setLastSynced(new Date());
+      // Reload page to show fresh data
+      window.location.reload();
+    } else {
+      setSyncStatus('error');
+      setError(result.errors.join(', '));
+    }
+
+    return result;
+  }, [isAuthenticated, user?.id]);
+
+  // Push all data to Supabase (for migration)
+  const pushAll = useCallback(async () => {
+    if (!isAuthenticated || !user?.id) {
+      return { success: false, error: 'Not authenticated' };
+    }
+
+    console.log('[useSimpleSync] Pushing all data to Supabase...');
+    const result = await syncAllToSupabase();
+
+    if (result.success) {
+      setLastSynced(new Date());
+      console.log('[useSimpleSync] Push complete:', result.synced);
+    } else {
+      console.error('[useSimpleSync] Push failed:', result.errors);
+    }
+
+    return result;
+  }, [isAuthenticated, user?.id]);
+
+  // Sync a single data type
+  const sync = useCallback(async (localKey) => {
+    return syncToSupabase(localKey);
+  }, []);
+
+  return {
+    syncStatus,
+    lastSynced,
+    error,
+    refresh,    // Pull fresh data from Supabase
+    pushAll,    // Push all localStorage to Supabase (for migration)
+    sync,       // Sync a single data type
+    isReady: syncStatus === 'ready',
+    isLoading: syncStatus === 'loading',
+  };
+}
+
+export default useSimpleSync;

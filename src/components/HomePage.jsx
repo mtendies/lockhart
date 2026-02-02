@@ -2855,7 +2855,7 @@ function SyncIndicator({ syncStatus, onRefresh }) {
 }
 
 // Main HomePage Component
-export default function HomePage({ onNavigate, onOpenCheckIn, syncStatus, onRefresh, dataVersion }) {
+export default function HomePage({ onNavigate, onOpenCheckIn, syncStatus, onRefresh }) {
   const [profile, setProfile] = useState(null);
   const [showPlaybook, setShowPlaybook] = useState(false);
   const [expandedSections, setExpandedSections] = useState({
@@ -2874,11 +2874,11 @@ export default function HomePage({ onNavigate, onOpenCheckIn, syncStatus, onRefr
   // Check if in calibration period
   const inCalibration = isInCalibrationPeriod() && !isCalibrationComplete();
 
-  // Load profile on mount and when dataVersion changes (after sync)
+  // Load profile on mount and when sync status changes to ready
   useEffect(() => {
     window.scrollTo(0, 0);
     setProfile(getProfile());
-  }, [dataVersion]);
+  }, [syncStatus]);
 
   // Pull-to-refresh handlers
   const handleTouchStart = (e) => {

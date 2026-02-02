@@ -5,7 +5,7 @@
  */
 
 import { getItem, setItem } from './storageHelper';
-import { syncInsight, deleteInsightFromSupabase } from './lib/syncHelper';
+import { syncInsights } from './lib/simpleSync';
 
 const STORAGE_KEY = 'health-advisor-learned-insights';
 
@@ -45,10 +45,12 @@ export function getLearnedInsights() {
 }
 
 /**
- * Save insights to storage
+ * Save insights to storage and sync to Supabase
  */
 function saveInsights(insights) {
   setItem(STORAGE_KEY, JSON.stringify(insights));
+  // Sync to Supabase in background (debounced)
+  syncInsights();
 }
 
 /**
@@ -89,9 +91,6 @@ export function addLearnedInsight(insight) {
   insights.unshift(newInsight);
   saveInsights(insights);
 
-  // Sync to Supabase in background
-  syncInsight(newInsight);
-
   return newInsight;
 }
 
@@ -129,10 +128,7 @@ export function deleteLearnedInsight(id) {
   if (filtered.length === insights.length) return false;
 
   saveInsights(filtered);
-
-  // Delete from Supabase in background
-  deleteInsightFromSupabase(id);
-
+  // saveInsights already syncs to Supabase (full array replaces old)
   return true;
 }
 

@@ -4,7 +4,7 @@
  */
 
 import { getItem, setItem } from './storageHelper';
-import { syncConversation, deleteConversationFromSupabase } from './lib/syncHelper';
+import { syncChats } from './lib/simpleSync';
 
 const STORAGE_KEY = 'health-advisor-chats';
 
@@ -40,10 +40,12 @@ export function getAllChats() {
 }
 
 /**
- * Save all chats to storage
+ * Save all chats to storage and sync to Supabase
  */
 function saveChats(chats) {
   setItem(STORAGE_KEY, JSON.stringify(chats));
+  // Sync to Supabase in background (debounced)
+  syncChats();
 }
 
 /**
@@ -294,9 +296,6 @@ export function createChat(initialMessage = null) {
   chats.unshift(newChat);
   saveChats(chats);
 
-  // Sync to Supabase in background
-  syncConversation(newChat);
-
   return newChat;
 }
 
@@ -339,9 +338,6 @@ export function updateChatMessages(chatId, messages) {
   };
 
   saveChats(chats);
-
-  // Sync to Supabase in background
-  syncConversation(chats[index]);
 
   return chats[index];
 }
@@ -425,9 +421,7 @@ export function archiveMessage(chatId, messageIndex) {
 export function deleteChat(chatId) {
   const chats = getAllChats().filter(c => c.id !== chatId);
   saveChats(chats);
-
-  // Delete from Supabase in background
-  deleteConversationFromSupabase(chatId);
+  // saveChats already syncs to Supabase (full array replaces old)
 }
 
 /**

@@ -11,7 +11,7 @@
 import { getItem, setItem, removeItem } from './storageHelper';
 import { getProfile } from './store';
 import { logActivity, ACTIVITY_TYPES } from './activityLogStore';
-import { syncNutritionDay, syncNutritionCalibration } from './lib/syncHelper';
+import { syncNutrition } from './lib/simpleSync';
 
 const STORAGE_KEY = 'health-advisor-nutrition-calibration';
 const PROFILE_KEY = 'health-advisor-nutrition-profile';
@@ -398,8 +398,8 @@ export function getCalibrationData() {
  */
 export function saveCalibrationData(data) {
   setItem(STORAGE_KEY, JSON.stringify(data));
-  // Sync to Supabase in background
-  syncNutritionCalibration(data);
+  // Sync to Supabase in background (debounced)
+  syncNutrition();
 }
 
 /**

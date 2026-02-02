@@ -1,6 +1,6 @@
 import { createBackup, getBackup } from './dataBackup';
 import { getItem, setItem, removeItem } from './storageHelper';
-import { syncProfile } from './lib/syncHelper';
+import { syncProfile } from './lib/simpleSync';
 
 const STORAGE_KEY = 'health-advisor-profile';
 
@@ -38,8 +38,8 @@ export function saveProfile(profile) {
   // Create backup before modifying
   createBackup();
   setItem(STORAGE_KEY, JSON.stringify(profile));
-  // Sync to Supabase in background
-  syncProfile(profile);
+  // Sync to Supabase in background (debounced)
+  syncProfile();
 }
 
 export function clearProfile() {

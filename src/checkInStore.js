@@ -1,5 +1,5 @@
 import { getItem, setItem, removeItem } from './storageHelper';
-import { syncCheckin } from './lib/syncHelper';
+import { syncCheckins } from './lib/simpleSync';
 
 const STORAGE_KEY = 'health-advisor-checkins';
 const REMINDER_KEY = 'health-advisor-checkin-reminder';
@@ -136,8 +136,8 @@ export function addCheckIn(checkIn) {
   checkIns.push(entry);
   setItem(STORAGE_KEY, JSON.stringify(checkIns));
 
-  // Sync to Supabase in background
-  syncCheckin(entry);
+  // Sync to Supabase in background (debounced)
+  syncCheckins();
 
   return checkIns;
 }
@@ -225,6 +225,7 @@ export function clearCurrentWeekCheckIn() {
   // Filter out current week's check-in
   const filteredCheckIns = checkIns.filter(c => c.weekOf !== currentWeek);
   setItem(STORAGE_KEY, JSON.stringify(filteredCheckIns));
+  syncCheckins(); // Sync to Supabase
 
   // Also clear draft and reminder state
   clearDraft();

@@ -5,7 +5,7 @@
  */
 
 import { getItem, setItem, removeItem } from './storageHelper';
-import { syncActivity, deleteActivityFromSupabase } from './lib/syncHelper';
+import { syncActivities } from './lib/simpleSync';
 
 const STORAGE_KEY = 'health-advisor-activities';
 
@@ -50,10 +50,12 @@ export function getActivities() {
 }
 
 /**
- * Save activities to storage
+ * Save activities to storage and sync to Supabase
  */
 function saveActivities(activities) {
   setItem(STORAGE_KEY, JSON.stringify(activities));
+  // Sync to Supabase in background (debounced)
+  syncActivities();
 }
 
 /**
@@ -79,9 +81,6 @@ export function logActivity(activity) {
 
   activities.unshift(newActivity); // Most recent first
   saveActivities(activities);
-
-  // Sync to Supabase in background
-  syncActivity(newActivity);
 
   return newActivity;
 }
@@ -174,10 +173,7 @@ export function getWeeklySummary() {
 export function deleteActivity(id) {
   const activities = getActivities().filter(a => a.id !== id);
   saveActivities(activities);
-
-  // Delete from Supabase in background
-  deleteActivityFromSupabase(id);
-
+  // saveActivities already syncs to Supabase (full array replaces old)
   return activities;
 }
 
