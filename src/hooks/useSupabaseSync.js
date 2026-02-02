@@ -156,17 +156,55 @@ export function useSupabaseSync() {
         safeUpdate(SYNC_KEYS.checkins, results.checkins, true);
       }
 
-      // Store nutrition calibration - now stored in users_profile.nutrition_data
-      console.log('[Sync] results.nutritionCalibration:', results.nutritionCalibration);
-      console.log('[Sync] typeof results.nutritionCalibration:', typeof results.nutritionCalibration);
-
+      // Store nutrition calibration - smart merge to avoid overwriting local edits
+      // Only update local if Supabase has MORE meal content (prevents race conditions)
       if (results.nutritionCalibration) {
-        const dataStr = JSON.stringify(results.nutritionCalibration);
-        console.log('[Sync] Saving nutrition to localStorage, length:', dataStr.length);
-        setItem(SYNC_KEYS.nutrition, dataStr);
-        console.log('[Sync] Nutrition saved to key:', SYNC_KEYS.nutrition);
-      } else {
-        console.log('[Sync] NO nutrition data from Supabase - results.nutritionCalibration is falsy');
+        const existingRaw = getItem(SYNC_KEYS.nutrition);
+        if (!existingRaw) {
+          // No local data, safe to set from Supabase
+          console.log('[Sync] No local nutrition data, using Supabase data');
+          setItem(SYNC_KEYS.nutrition, JSON.stringify(results.nutritionCalibration));
+        } else {
+          try {
+            const localData = JSON.parse(existingRaw);
+            const remoteData = results.nutritionCalibration;
+
+            // Count meals with content in each version
+            const countMealsWithContent = (data) => {
+              if (!data?.days) return 0;
+              let count = 0;
+              for (const day of Object.values(data.days)) {
+                if (day?.meals) {
+                  count += day.meals.filter(m => m.content?.trim()).length;
+                }
+              }
+              return count;
+            };
+
+            const localMealCount = countMealsWithContent(localData);
+            const remoteMealCount = countMealsWithContent(remoteData);
+
+            console.log('[Sync] Nutrition comparison - local meals:', localMealCount, ', remote meals:', remoteMealCount);
+
+            if (remoteMealCount > localMealCount) {
+              // Supabase has more data - use it (likely a fresh device)
+              console.log('[Sync] Supabase has more nutrition data, using remote');
+              setItem(SYNC_KEYS.nutrition, JSON.stringify(remoteData));
+            } else if (localMealCount > 0) {
+              // Local has equal or more data - keep local (user may have unsaved edits)
+              console.log('[Sync] Keeping local nutrition data (has', localMealCount, 'meals)');
+            } else if (remoteMealCount > 0) {
+              // Both empty but remote has structure - use remote
+              console.log('[Sync] Using remote nutrition structure');
+              setItem(SYNC_KEYS.nutrition, JSON.stringify(remoteData));
+            }
+            // If both are empty, keep whatever structure exists locally
+          } catch (e) {
+            // Local data is corrupt, use Supabase
+            console.log('[Sync] Local nutrition data corrupt, using Supabase');
+            setItem(SYNC_KEYS.nutrition, JSON.stringify(results.nutritionCalibration));
+          }
+        }
       }
 
       // Store notes (only if no local notes)
