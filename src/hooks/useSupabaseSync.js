@@ -141,24 +141,13 @@ export function useSupabaseSync() {
         safeUpdate(SYNC_KEYS.checkins, results.checkins, true);
       }
 
-      // Store nutrition calibration - Supabase is SOURCE OF TRUTH
-      // Now uses simplified single-row approach (no date conversion issues)
-      console.log('[Sync] Nutrition calibration from Supabase:', results.nutritionCalibration);
-
-      if (results.nutritionCalibration && results.nutritionCalibration.days) {
-        const days = results.nutritionCalibration.days;
-        const daysWithData = Object.entries(days).filter(([_, data]) => data !== null);
-
-        console.log('[Sync] Nutrition days with data:', daysWithData.map(([day]) => day));
-
-        if (daysWithData.length > 0) {
-          setItem(SYNC_KEYS.nutrition, JSON.stringify(results.nutritionCalibration));
-          console.log('[Sync] Nutrition calibration saved to localStorage');
-        } else {
-          console.log('[Sync] Nutrition has days object but no data in days');
-        }
+      // Store nutrition calibration - now stored in users_profile.nutrition_data
+      // Simple: exact localStorage format stored as JSONB, no transformation needed
+      if (results.nutritionCalibration) {
+        console.log('[Sync] Nutrition data from Supabase - saving to localStorage');
+        setItem(SYNC_KEYS.nutrition, JSON.stringify(results.nutritionCalibration));
       } else {
-        console.log('[Sync] No nutrition calibration data from Supabase');
+        console.log('[Sync] No nutrition data in Supabase');
       }
 
       // Store notes (only if no local notes)
