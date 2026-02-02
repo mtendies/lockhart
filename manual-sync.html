@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Manual Sync</title>
+</head>
+<body>
+  <h1>Manual Sync to Supabase</h1>
+  <p>Open browser console (Cmd+Option+J) to see progress.</p>
+  <button id="runSync" style="padding: 20px; font-size: 18px;">Click to Run Sync</button>
+  <pre id="output" style="background: #f0f0f0; padding: 20px; margin-top: 20px;"></pre>
+
+  <script type="module">
+    import { supabase } from './src/lib/supabase.js';
+
+    window.runSync = async function() {
+      const output = document.getElementById('output');
+      const log = (msg) => {
+        console.log(msg);
+        output.textContent += msg + '\n';
+      };
+
+      log("=== STARTING MANUAL SYNC TO SUPABASE ===");
+
+      const authResult = await supabase.auth.getUser();
+      const user = authResult.data.user;
+      if (!user) {
+        log("ERROR: Not logged in! Please sign in first at localhost:5173");
+        return;
+      }
+      log("User ID: " + user.id);
+      log("Email: " + user.email);
+
+      const activeProfileId = localStorage.getItem("health-advisor-active-profile") || "profile_main";
+      log("Active profile: " + activeProfileId);
+
+      function getData(key) {
+        const fullKey = activeProfileId + ":" + key;
+        const data = localStorage.getItem(fullKey);
+        if (!data) return null;
+        try { return JSON.parse(data); } catch(e) { return null; }
+      }
+
+      const successList = [];
+      const failedList = [];
+
+      // 1. SYNC PROFILE
+      log("\n--- Syncing Profile ---");
+      const profile = getData("health-advisor-profile");
+      if (profile) {
+        log("Found profile: " + profile.name);
+
+        const dbProfile = {
+          id: user.id,
+          email: user.email,
+          name: profile.name,
+          age: profile.age ? Number(profile.age) : null,
+          sex: profile.sex,
+          height_feet: profile.heightFeet || (profile.height ? Math.floor(Number(profile.height) / 12) : null),
+          height_inches: profile.heightInches || (profile.height ? Number(profile.height) % 12 : null),
+          weight: profile.weight ? Number(profile.weight) : null,
+          goals: profile.goals,
+          exercise_types: profile.exercises,
+          dietary_preferences: profile.restrictions,
+          meal_cadence: profile.mealPattern,
+          onboarding_complete: true,
+          full_profile: profile,
+          updated_at: new Date().toISOString()
+        };
+
+        const profileResult = await supabase.from("users_profile").upsert(dbProfile);
+        if (profileResult.error) {
+          log("ERROR Profile sync failed: " + profileResult.error.message);
+          failedList.push("Profile");
+        } else {
+          log("SUCCESS Profile synced!");
+          successList.push("Profile");
+        }
+      } else {
+        log("No profile found in localStorage");
+      }
+
+      // 2. SYNC PLAYBOOK
+      log("\n--- Syncing Playbook ---");
+      const playbook = getData("health-advisor-playbook");
+      if (playbook) {
+        const dbPlaybook = {
+          user_id: user.id,
+          summary: playbook.summary,
+          focus_goals: playbook.weeklyFocus,
+          key_principles: playbook.principles,
+          on_your_radar: playbook.radar,
+          pending_suggestions: playbook.pendingSuggestions,
+          generated_at: playbook.generatedAt,
+          last_modified: playbook.lastModified || new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        };
+
+        const playbookResult = await supabase.from("playbook").upsert(dbPlaybook, { onConflict: "user_id" });
+        if (playbookResult.error) {
+          log("ERROR Playbook sync failed: " + playbookResult.error.message);
+          failedList.push("Playbook");
+        } else {
+          log("SUCCESS Playbook synced!");
+          successList.push("Playbook");
+        }
+      }
+
+      // 3. SYNC CONVERSATIONS
+      log("\n--- Syncing Conversations ---");
+      const chats = getData("health-advisor-chats");
+      if (chats && chats.length > 0) {
+        let chatSuccess = 0;
+        let chatFailed = 0;
+        for (const chat of chats) {
+          const dbChat = {
+            user_id: user.id,
+            title: chat.title || "Chat",
+            messages: chat.messages || [],
+            bookmarks: chat.bookmarks || [],
+            archived: chat.archived || false,
+            last_activity: chat.lastActivity || new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          };
+
+          if (chat.id && chat.id.length === 36 && chat.id.indexOf("-") > -1) {
+            dbChat.id = chat.id;
+          }
+
+          const chatResult = await supabase.from("chat_conversations").upsert(dbChat, { onConflict: "id" });
+          if (chatResult.error) {
+            chatFailed++;
+          } else {
+            chatSuccess++;
+          }
+        }
+        log("Conversations: " + chatSuccess + " synced, " + chatFailed + " failed");
+        if (chatSuccess > 0) successList.push(chatSuccess + " Conversations");
+      }
+
+      // 4. SYNC ACTIVITIES
+      log("\n--- Syncing Activities ---");
+      const activities = getData("health-advisor-activities");
+      if (activities && activities.length > 0) {
+        let actSuccess = 0;
+        for (const activity of activities) {
+          const dbActivity = {
+            user_id: user.id,
+            type: activity.type,
+            sub_type: activity.subType,
+            category: activity.category,
+            description: activity.summary || activity.description || activity.rawText,
+            data: activity.data || {},
+            raw_text: activity.rawText,
+            logged_at: activity.timestamp || new Date().toISOString()
+          };
+
+          const actResult = await supabase.from("activities").insert(dbActivity);
+          if (!actResult.error || actResult.error.code === "23505") actSuccess++;
+        }
+        log("Activities: " + actSuccess + " synced");
+        if (actSuccess > 0) successList.push(actSuccess + " Activities");
+      }
+
+      // 5. SYNC NUTRITION
+      log("\n--- Syncing Nutrition ---");
+      const nutrition = getData("health-advisor-nutrition-calibration");
+      if (nutrition && nutrition.days) {
+        let nutSuccess = 0;
+        const dayOrder = { monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5 };
+
+        for (const [dayName, dayData] of Object.entries(nutrition.days)) {
+          if (!dayData || !dayOrder[dayName]) continue;
+
+          const today = new Date();
+          const diff = dayOrder[dayName] - today.getDay();
+          const targetDate = new Date(today);
+          targetDate.setDate(today.getDate() + diff);
+          const dateStr = targetDate.toISOString().split("T")[0];
+
+          const nutResult = await supabase.from("nutrition_calibration").upsert({
+            user_id: user.id,
+            date: dateStr,
+            meals: dayData,
+            complete: dayData.completed || false
+          });
+          if (!nutResult.error) nutSuccess++;
+        }
+        log("Nutrition days: " + nutSuccess + " synced");
+        if (nutSuccess > 0) successList.push(nutSuccess + " Nutrition days");
+      }
+
+      // 6. SYNC GROCERY
+      log("\n--- Syncing Grocery ---");
+      const grocery = getData("health-advisor-groceries") || getData("health-advisor-grocery");
+      if (grocery) {
+        const groceryResult = await supabase.from("grocery_data").upsert({
+          user_id: user.id,
+          data: grocery,
+          updated_at: new Date().toISOString()
+        });
+        if (!groceryResult.error) {
+          log("SUCCESS Grocery synced!");
+          successList.push("Grocery");
+        }
+      }
+
+      // 7. SYNC INSIGHTS
+      log("\n--- Syncing Insights ---");
+      const insights = getData("health-advisor-learned-insights");
+      if (insights && insights.length > 0) {
+        let insSuccess = 0;
+        for (const insight of insights) {
+          const insResult = await supabase.from("advisor_learned").insert({
+            user_id: user.id,
+            insight: insight.text || insight.insight,
+            category: insight.category,
+            confidence: insight.confidence
+          });
+          if (!insResult.error || insResult.error.code === "23505") insSuccess++;
+        }
+        log("Insights: " + insSuccess + " synced");
+        if (insSuccess > 0) successList.push(insSuccess + " Insights");
+      }
+
+      // SUMMARY
+      log("\n========================================");
+      log("           SYNC COMPLETE");
+      log("========================================");
+      log("SUCCESS: " + (successList.join(", ") || "None"));
+      if (failedList.length > 0) {
+        log("FAILED: " + failedList.join(", "));
+      }
+      log("\nNow try the app on your phone!");
+    };
+
+    document.getElementById('runSync').onclick = window.runSync;
+  </script>
+</body>
+</html>

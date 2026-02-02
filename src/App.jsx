@@ -76,7 +76,7 @@ import { getLearnedInsights } from './learnedInsightsStore';
 
 function AppContent() {
   const { user, loading: authLoading, signOut } = useAuth();
-  const { syncStatus, loadFromSupabase, pushToSupabase, syncToSupabase, forceLoadFromSupabase } = useSupabaseSync();
+  const { syncStatus, loadFromSupabase, pushToSupabase, syncToSupabase, forceLoadFromSupabase, supabaseProfile } = useSupabaseSync();
 
   // Expose recovery function globally for console access
   useEffect(() => {
@@ -198,22 +198,32 @@ function AppContent() {
   }, []);
 
   // Reload all data after Supabase sync completes
-  // This ensures data loaded from Supabase is reflected in the UI
+  // CRITICAL: Use supabaseProfile as source of truth for authenticated users
   useEffect(() => {
     if (syncStatus === 'synced') {
-      console.log('[App] Supabase sync complete, reloading data...');
-      const saved = getProfile();
-      console.log('[App] Profile after sync:', saved?.name || 'null');
-      // Always update profile from localStorage after sync - this is critical for cross-device sync
-      if (saved) {
-        setProfile(saved);
-        previousProfileRef.current = saved;
+      console.log('[App] Supabase sync complete');
+      console.log('[App] supabaseProfile:', supabaseProfile?.name || 'null');
+
+      // Use Supabase profile as source of truth
+      if (supabaseProfile) {
+        console.log('[App] Using profile from Supabase:', supabaseProfile.name);
+        setProfile(supabaseProfile);
+        previousProfileRef.current = supabaseProfile;
+      } else {
+        // Fallback to localStorage only if Supabase has no profile
+        const saved = getProfile();
+        console.log('[App] No Supabase profile, localStorage profile:', saved?.name || 'null');
+        if (saved) {
+          setProfile(saved);
+          previousProfileRef.current = saved;
+        }
       }
+
       setNotes(getNotes());
       setPlaybook(getPlaybook());
       setActivityLogs(getActivitiesThisWeek());
     }
-  }, [syncStatus]);
+  }, [syncStatus, supabaseProfile]);
 
   // Refresh playbook from localStorage - call this after any playbook modification
   function refreshPlaybook() {
@@ -467,7 +477,7 @@ function AppContent() {
   // If authenticated but no profile and sync hasn't completed yet, wait for sync
   // This prevents showing Onboarding before Supabase data has loaded
   // 'idle' means sync hasn't started yet, 'syncing' means it's in progress
-  // But don't wait forever - timeout after 5 seconds
+  // But don't wait forever - timeout after 10 seconds
   if (user && !profile && (syncStatus === 'syncing' || syncStatus === 'idle') && !syncWaitExpired) {
     return (
       <div className="min-h-screen flex items-center justify-center flex-col gap-3">
@@ -477,7 +487,22 @@ function AppContent() {
     );
   }
 
-  if (!profile || editingProfile) {
+  // CRITICAL: If sync completed and Supabase has a profile, use it directly
+  // This handles the race condition where useEffect hasn't updated profile state yet
+  const effectiveProfile = profile || supabaseProfile;
+
+  // If we have supabaseProfile but profile state isn't set yet, set it now
+  // This ensures profile state is in sync for child components
+  if (supabaseProfile && !profile) {
+    console.log('[App] Setting profile state from supabaseProfile:', supabaseProfile.name);
+    // Use setTimeout to avoid setting state during render
+    setTimeout(() => {
+      setProfile(supabaseProfile);
+      previousProfileRef.current = supabaseProfile;
+    }, 0);
+  }
+
+  if (!effectiveProfile || editingProfile) {
     const wasEditing = editingProfile;
     return (
       <>
@@ -486,7 +511,7 @@ function AppContent() {
             handleOnboardingComplete(data, wasEditing);
             setEditingProfile(false);
           }}
-          initialData={editingProfile ? profile : undefined}
+          initialData={editingProfile ? effectiveProfile : undefined}
           onCancel={editingProfile ? () => setEditingProfile(false) : undefined}
         />
         {/* Dev Tools available even during onboarding */}

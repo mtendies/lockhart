@@ -30,7 +30,17 @@
       "Bash(git push:*)",
       "Bash(npm run dev)",
       "Bash(npm run dev:*)",
-      "Bash(git restore:*)"
+      "Bash(git restore:*)",
+      "Bash(python3:*)",
+      "Bash(SUPABASE_URL=\"https://wblumhrmsihjaruztlxf.supabase.co\")",
+      "Bash(SUPABASE_KEY=\"sb_publishable_OANejQqwHtL4mVZOUC96Lg_6GJKNTnY\")",
+      "Bash(__NEW_LINE_1fe50810991173c7__ curl -s \"$SUPABASE_URL/rest/v1/users_profile?select=id,name,email,onboarding_complete,updated_at\" -H \"apikey: $SUPABASE_KEY\" -H \"Authorization: Bearer $SUPABASE_KEY\")",
+      "Bash(__NEW_LINE_d9f86284f9b5948a__ echo \"=== All profiles ===\")",
+      "Bash(__NEW_LINE_d9f86284f9b5948a__ echo \"\")",
+      "Bash(cat /Users/Maxwell/health-coach/.env ls -la /Users/Maxwell/health-coach/.env* grep -r \"service_role\\\\|SUPABASE\" /Users/Maxwell/health-coach/*.*)",
+      "Bash(node debug-supabase.mjs:*)",
+      "Bash(node debug-auth.mjs:*)",
+      "Bash(xxd:*)"
     ]
   }
 }

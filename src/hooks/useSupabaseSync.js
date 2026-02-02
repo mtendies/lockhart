@@ -31,6 +31,7 @@ export function useSupabaseSync() {
   const [syncStatus, setSyncStatus] = useState('idle'); // idle | syncing | synced | error
   const [lastSynced, setLastSynced] = useState(null);
   const [syncErrors, setSyncErrors] = useState([]);
+  const [supabaseProfile, setSupabaseProfile] = useState(null); // Profile loaded from Supabase
 
   // Load all data from Supabase into localStorage
   // IMPORTANT: Only overwrites local data if Supabase has MORE data
@@ -94,28 +95,18 @@ export function useSupabaseSync() {
         return false;
       };
 
-      // Store profile - always update from Supabase for authenticated users
-      // This ensures profile data syncs correctly across devices
+      // Store profile - Supabase is the SOURCE OF TRUTH for authenticated users
+      // Always use Supabase profile if it exists and has onboarding_complete=true
       if (results.profile) {
-        console.log('[Sync] Received profile from Supabase:', results.profile.name);
-        // For profiles, always prefer Supabase data when loading
-        // Local profile is only used as cache between sessions
-        const existing = getItem(SYNC_KEYS.profile);
-        if (!existing) {
-          console.log('[Sync] No local profile, using Supabase data');
-          setItem(SYNC_KEYS.profile, JSON.stringify(results.profile));
-        } else {
-          // Merge: use Supabase data but preserve any local-only fields
-          try {
-            const localProfile = JSON.parse(existing);
-            const merged = { ...localProfile, ...results.profile };
-            console.log('[Sync] Merged profile:', merged.name);
-            setItem(SYNC_KEYS.profile, JSON.stringify(merged));
-          } catch {
-            console.log('[Sync] Local profile corrupt, using Supabase data');
-            setItem(SYNC_KEYS.profile, JSON.stringify(results.profile));
-          }
-        }
+        console.log('[Sync] Received profile from Supabase:', results.profile.name, 'onboarding_complete:', results.profile.onboardingComplete);
+        // ALWAYS save Supabase profile to localStorage - Supabase is source of truth
+        setItem(SYNC_KEYS.profile, JSON.stringify(results.profile));
+        // Also set state so App.jsx can use it immediately
+        setSupabaseProfile(results.profile);
+        console.log('[Sync] Profile saved to localStorage from Supabase');
+      } else {
+        console.log('[Sync] No profile found in Supabase');
+        setSupabaseProfile(null);
       }
 
       // Store activities (only if Supabase has more)
@@ -400,6 +391,7 @@ export function useSupabaseSync() {
     forceLoadFromSupabase, // For data recovery - overwrites local data
     isAuthenticated,
     userId: user?.id,
+    supabaseProfile, // Profile loaded directly from Supabase - use this as source of truth
   };
 }
 
