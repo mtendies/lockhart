@@ -267,8 +267,17 @@ function createEmptyDayWithMeals() {
  * Migrate old day data to new meals array format
  */
 function migrateDayToMeals(dayData) {
-  if (dayData.meals && Array.isArray(dayData.meals)) {
-    return dayData; // Already migrated
+  // If meals array exists and has items, it's already set up
+  if (dayData.meals && Array.isArray(dayData.meals) && dayData.meals.length > 0) {
+    return dayData;
+  }
+
+  // If meals is empty array, create from default pattern
+  if (dayData.meals && Array.isArray(dayData.meals) && dayData.meals.length === 0) {
+    return {
+      ...dayData,
+      meals: createDayMealsFromPattern(),
+    };
   }
 
   // Convert old field-based data to meals array

@@ -201,6 +201,7 @@ import {
   isCalibrationComplete,
   getCalibrationProgress,
   getCalibrationData,
+  saveCalibrationData,
   updateMealById,
   getTodayDayKey,
   DAY_LABELS,
@@ -1424,8 +1425,28 @@ function NutritionCalibrationCard() {
   const profile = getProfile();
 
   useEffect(() => {
-    setCalibrationData(getCalibrationData());
-  }, []);
+    const data = getCalibrationData();
+    // Ensure today has meals initialized (in case synced data has empty meals)
+    if (todayKey && CALIBRATION_DAYS.includes(todayKey)) {
+      if (!data.days[todayKey]?.meals || data.days[todayKey].meals.length === 0) {
+        // Initialize today with default meals
+        const defaultMeals = getDefaultMealPattern().map((meal, idx) => ({
+          id: `${todayKey}-${meal.type}-${Date.now()}-${idx}`,
+          type: meal.type,
+          label: meal.label,
+          content: '',
+          order: idx,
+        }));
+        data.days[todayKey] = {
+          ...data.days[todayKey],
+          meals: defaultMeals,
+          completed: false,
+        };
+        saveCalibrationData(data);
+      }
+    }
+    setCalibrationData(data);
+  }, [todayKey]);
 
   function handleMealUpdate(dayKey, mealId, content) {
     updateMealById(dayKey, mealId, { content });
