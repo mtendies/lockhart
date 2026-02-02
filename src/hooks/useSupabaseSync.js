@@ -139,9 +139,12 @@ export function useSupabaseSync() {
         safeUpdate(SYNC_KEYS.checkins, results.checkins, true);
       }
 
-      // Store nutrition calibration (only if no local)
-      if (results.nutritionCalibration) {
-        safeUpdate(SYNC_KEYS.nutrition, results.nutritionCalibration, false);
+      // Store nutrition calibration - Supabase is SOURCE OF TRUTH
+      // Always use Supabase data if it has actual day entries
+      if (results.nutritionCalibration && Object.keys(results.nutritionCalibration.days || {}).length > 0) {
+        console.log('[Sync] Received nutrition calibration from Supabase:', Object.keys(results.nutritionCalibration.days));
+        setItem(SYNC_KEYS.nutrition, JSON.stringify(results.nutritionCalibration));
+        console.log('[Sync] Nutrition calibration saved to localStorage from Supabase');
       }
 
       // Store notes (only if no local notes)
