@@ -228,8 +228,8 @@ function GoalReminder({ profile }) {
 
   if (dismissed) return null;
 
-  // Get user's goals from profile
-  const goals = profile?.goals || [];
+  // Get user's goals from profile - ensure it's always an array
+  const goals = Array.isArray(profile?.goals) ? profile.goals : [];
   const goalDetails = profile?.goalDetails || {};
 
   if (goals.length === 0) return null;
