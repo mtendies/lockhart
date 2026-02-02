@@ -95,17 +95,7 @@ export default function FeedbackButton({ currentPage = 'home', isOpenExternal = 
 
   return (
     <>
-      {/* Floating Feedback Button - Hidden on mobile to avoid blocking UI */}
-      <button
-        onClick={() => setIsOpen(true)}
-        className="hidden md:flex fixed bottom-20 left-4 z-40 items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-full shadow-lg hover:bg-blue-700 hover:scale-105 transition-all group"
-        title="Share feedback"
-      >
-        <MessageCircle size={18} />
-        <span className="text-sm font-medium hidden sm:inline group-hover:inline">Feedback</span>
-      </button>
-
-      {/* Feedback Modal */}
+      {/* Feedback Modal - triggered externally via isOpenExternal prop from Header menu */}
       {isOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           {/* Backdrop */}

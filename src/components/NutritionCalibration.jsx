@@ -1118,6 +1118,16 @@ function ExpandingTextarea({ value, onChange, placeholder, disabled, onSave }) {
     }
   }
 
+  // On focus, scroll textarea into view (for mobile keyboard)
+  function handleFocus() {
+    // Small delay to let keyboard appear
+    setTimeout(() => {
+      if (textareaRef.current) {
+        textareaRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 300);
+  }
+
   // Cleanup
   useEffect(() => {
     return () => {
@@ -1133,12 +1143,13 @@ function ExpandingTextarea({ value, onChange, placeholder, disabled, onSave }) {
         value={localValue}
         onChange={handleChange}
         onBlur={handleBlur}
+        onFocus={handleFocus}
         disabled={disabled}
         placeholder={placeholder}
         className={`w-full px-3 py-2.5 rounded-lg border border-gray-200 focus:border-primary-300 focus:ring-2 focus:ring-primary-100 outline-none transition-all text-sm text-gray-700 placeholder:text-gray-400 resize-none overflow-hidden whitespace-pre-wrap ${
           disabled ? 'bg-gray-50 text-gray-500' : 'bg-white'
         }`}
-        style={{ minHeight: '80px' }}
+        style={{ minHeight: '80px', touchAction: 'manipulation' }}
       />
       {/* Saved indicator - positioned below the textarea */}
       {saved && (
@@ -1506,10 +1517,11 @@ function MealPatternSetup({ onComplete, onSkip }) {
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
-      activationConstraint: { distance: 5 },
+      activationConstraint: { distance: 8 },
     }),
     useSensor(TouchSensor, {
-      activationConstraint: { delay: 200, tolerance: 5 },
+      // Longer delay prevents interference with tapping to focus inputs
+      activationConstraint: { delay: 400, tolerance: 8 },
     }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
@@ -1766,10 +1778,11 @@ function DayEntry({
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
-      activationConstraint: { distance: 5 },
+      activationConstraint: { distance: 8 },
     }),
     useSensor(TouchSensor, {
-      activationConstraint: { delay: 200, tolerance: 5 },
+      // Longer delay prevents interference with tapping to focus inputs
+      activationConstraint: { delay: 400, tolerance: 8 },
     }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
@@ -1884,7 +1897,7 @@ function DayEntry({
 
       {/* Meal entries with drag-and-drop */}
       {isExpanded && (
-        <div className="p-4">
+        <div className="p-4 pb-32">
           <p className="text-xs text-gray-500 mb-3">
             Drag meals to reorder. Add or remove as needed.
           </p>
