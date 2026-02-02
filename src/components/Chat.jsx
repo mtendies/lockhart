@@ -222,8 +222,8 @@ export default function Chat({
     };
   }
 
-  // Table of Contents state
-  const [tocOpen, setTocOpen] = useState(true);
+  // Table of Contents state - default closed on mobile, open on desktop
+  const [tocOpen, setTocOpen] = useState(() => window.innerWidth >= 768);
   const [currentVisibleMessageIndex, setCurrentVisibleMessageIndex] = useState(null);
 
   const messagesEndRef = useRef(null);
