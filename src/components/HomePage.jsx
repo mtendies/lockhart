@@ -1084,9 +1084,67 @@ function SourceDetailPopup({ item, onClose }) {
   );
 }
 
-// Calorie Popup Component - Shows calorie breakdown for a meal entry
+// Unit options for editable calorie popup
+const UNIT_OPTIONS = {
+  volume: ['tbsp', 'tsp', 'cup', 'oz', 'ml'],
+  weight: ['oz', 'g', 'lb'],
+  count: ['piece', 'slice', 'whole', 'serving', 'handful', 'scoop', 'egg', 'breast', 'thigh', 'fillet'],
+};
+
+function getUnitOptionsForItem(item) {
+  const unit = item.unit;
+  if (['tbsp', 'tsp', 'cup', 'ml'].includes(unit)) return [...new Set([unit, ...UNIT_OPTIONS.volume])];
+  if (['g', 'lb'].includes(unit)) return [...new Set([unit, ...UNIT_OPTIONS.weight])];
+  if (['oz'].includes(unit)) return [...new Set([unit, ...UNIT_OPTIONS.volume, ...UNIT_OPTIONS.weight])];
+  return [...new Set([unit, ...UNIT_OPTIONS.count])];
+}
+
+const UNIT_CONVERSIONS = {
+  'tbsp_to_tsp': 3, 'tsp_to_tbsp': 1/3,
+  'cup_to_tbsp': 16, 'tbsp_to_cup': 1/16,
+  'cup_to_oz': 8, 'oz_to_cup': 1/8,
+  'cup_to_tsp': 48, 'tsp_to_cup': 1/48,
+  'lb_to_oz': 16, 'oz_to_lb': 1/16,
+  'lb_to_g': 453.6, 'g_to_lb': 1/453.6,
+  'oz_to_g': 28.35, 'g_to_oz': 1/28.35,
+};
+
+function convertBetweenUnits(qty, from, to) {
+  if (from === to) return qty;
+  const key = `${from}_to_${to}`;
+  if (UNIT_CONVERSIONS[key]) return qty * UNIT_CONVERSIONS[key];
+  return qty;
+}
+
+// Calorie Popup Component - Shows calorie breakdown with editable servings
 function CaloriePopup({ estimate, onClose }) {
   const [selectedItem, setSelectedItem] = useState(null);
+
+  // Editable items state - each item gets its own quantity/unit
+  const [editableItems, setEditableItems] = useState(() =>
+    (estimate?.items || []).map(item => ({
+      ...item,
+      editQty: item.quantity,
+      editUnit: item.unit,
+      calPerUnit: Math.round(item.calories / item.quantity) || item.calories,
+    }))
+  );
+
+  const totalCalories = editableItems.reduce((sum, item) => sum + Math.round(item.calPerUnit * item.editQty), 0);
+
+  function handleQtyChange(idx, newQty) {
+    setEditableItems(prev => prev.map((item, i) =>
+      i === idx ? { ...item, editQty: newQty } : item
+    ));
+  }
+
+  function handleUnitChange(idx, newUnit) {
+    setEditableItems(prev => prev.map((item, i) => {
+      if (i !== idx) return item;
+      const converted = convertBetweenUnits(item.editQty, item.editUnit, newUnit);
+      return { ...item, editUnit: newUnit, editQty: Math.round(converted * 10) / 10 };
+    }));
+  }
 
   if (!estimate) return null;
 
@@ -1128,34 +1186,57 @@ function CaloriePopup({ estimate, onClose }) {
         <div className="overflow-y-auto max-h-[calc(85vh-120px)] px-4 py-4 sm:px-5">
           {/* Total */}
           <div className="text-center mb-5 pb-4 border-b border-gray-100">
-            <p className="text-4xl sm:text-5xl font-bold text-orange-600">{estimate.totalCalories}</p>
+            <p className="text-4xl sm:text-5xl font-bold text-orange-600">{totalCalories}</p>
             <p className="text-sm text-gray-500 mt-1">estimated calories</p>
           </div>
 
-          {/* Line-item breakdown */}
-          {estimate.items && estimate.items.length > 0 && (
+          {/* Line-item breakdown - editable */}
+          {editableItems.length > 0 && (
             <div className="space-y-3">
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                Breakdown ({estimate.items.length} item{estimate.items.length !== 1 ? 's' : ''})
+                Breakdown ({editableItems.length} item{editableItems.length !== 1 ? 's' : ''})
               </p>
 
-              {estimate.items.map((item, idx) => (
-                <div key={idx} className="bg-gray-50 rounded-xl p-3 space-y-2">
-                  {/* Food name and calories */}
-                  <div className="flex items-start justify-between gap-2">
-                    <span className="text-sm font-medium text-gray-900">{item.food}</span>
-                    <span className="text-sm font-bold text-orange-600 whitespace-nowrap">{item.calories} cal</span>
-                  </div>
+              {editableItems.map((item, idx) => {
+                const itemCal = Math.round(item.calPerUnit * item.editQty);
+                const unitOptions = getUnitOptionsForItem(item);
 
-                  {/* Calculation detail */}
-                  <div className="text-xs text-gray-500 space-y-0.5">
-                    <p className="flex items-center gap-1">
-                      <span className="text-gray-400">Calc:</span>
-                      <span>{item.calculation}</span>
-                    </p>
+                return (
+                  <div key={idx} className="bg-gray-50 rounded-xl p-3 space-y-2">
+                    {/* Food name */}
+                    <div className="flex items-start justify-between gap-2">
+                      <span className="text-sm font-medium text-gray-900">{item.food}</span>
+                      <span className="text-sm font-bold text-orange-600 whitespace-nowrap">{itemCal} cal</span>
+                    </div>
+
+                    {/* Editable quantity and unit */}
+                    <div className="flex items-center gap-1.5 text-xs">
+                      <input
+                        type="number"
+                        value={item.editQty}
+                        onChange={(e) => handleQtyChange(idx, parseFloat(e.target.value) || 0)}
+                        min="0"
+                        step="0.25"
+                        className="w-14 px-1.5 py-1 border border-gray-300 rounded-md text-center text-sm font-medium focus:outline-none focus:ring-1 focus:ring-orange-400 focus:border-orange-400"
+                      />
+                      <select
+                        value={item.editUnit}
+                        onChange={(e) => handleUnitChange(idx, e.target.value)}
+                        className="px-1.5 py-1 border border-gray-300 rounded-md text-sm bg-white focus:outline-none focus:ring-1 focus:ring-orange-400 focus:border-orange-400"
+                      >
+                        {unitOptions.map(u => (
+                          <option key={u} value={u}>{u}</option>
+                        ))}
+                      </select>
+                      <span className="text-gray-400 mx-0.5">&times;</span>
+                      <span className="text-gray-600">{item.calPerUnit} cal/{item.unit}</span>
+                      <span className="text-gray-400 mx-0.5">=</span>
+                      <span className="font-semibold text-orange-600">{itemCal}</span>
+                    </div>
+
+                    {/* Source */}
                     {item.source && (
-                      <p className="flex items-center gap-1">
-                        <span className="text-gray-400">Source:</span>
+                      <div className="text-xs text-gray-500">
                         <button
                           onClick={() => setSelectedItem(item)}
                           className="text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1"
@@ -1163,16 +1244,16 @@ function CaloriePopup({ estimate, onClose }) {
                           {item.source}
                           <Info size={10} />
                         </button>
-                      </p>
+                      </div>
                     )}
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
 
           {/* No items detected */}
-          {(!estimate.items || estimate.items.length === 0) && (
+          {editableItems.length === 0 && (
             <div className="text-center py-4">
               <p className="text-sm text-gray-500">No specific foods detected</p>
               <p className="text-xs text-gray-400 mt-1">Try being more specific with food names</p>
