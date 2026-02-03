@@ -553,6 +553,7 @@ function CompletedDaysDropdown({ progress, calibrationData, onEditDay }) {
 import {
   getCalibrationData,
   startCalibration,
+  alignCalibrationToCurrentWeek,
   updateMealById,
   completeDay,
   canCompleteDay,
@@ -2147,8 +2148,9 @@ export default function NutritionCalibration({ onComplete, compact = false, prof
       return;
     }
 
-    // Start calibration if not started
-    const data = startCalibration();
+    // Start calibration if not started, then align dates to current week
+    startCalibration();
+    const data = alignCalibrationToCurrentWeek();
     setCalibrationData(data);
 
     // Get today's day

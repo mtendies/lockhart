@@ -409,14 +409,59 @@ export function saveCalibrationData(data) {
 }
 
 /**
- * Start calibration (called when user first sees it)
+ * Start calibration (called when user first sees it).
+ * Sets startedAt to the Monday of the current week so the
+ * Mon-Fri calibration days align with the actual calendar.
  */
 export function startCalibration() {
   const data = getCalibrationData();
   if (!data.startedAt) {
-    data.startedAt = new Date().toISOString();
+    // Find Monday of the current week
+    const now = new Date();
+    const dayOfWeek = now.getDay(); // 0=Sun, 1=Mon, ...
+    const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    const monday = new Date(now);
+    monday.setDate(now.getDate() + diffToMonday);
+    monday.setHours(0, 0, 0, 0);
+    data.startedAt = monday.toISOString();
+    data.currentDay = getTodayDayKey() || 'monday';
     saveCalibrationData(data);
   }
+  return data;
+}
+
+/**
+ * Ensure calibration data is aligned with the current week.
+ * Fixes stale startedAt and ensures currentDay points to
+ * the first uncompleted day. Called on component mount.
+ */
+export function alignCalibrationToCurrentWeek() {
+  const data = getCalibrationData();
+  if (!data.startedAt || data.completedAt) return data;
+
+  // Recalculate Monday of the current week
+  const now = new Date();
+  const dayOfWeek = now.getDay();
+  const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+  const monday = new Date(now);
+  monday.setDate(now.getDate() + diffToMonday);
+  monday.setHours(0, 0, 0, 0);
+  data.startedAt = monday.toISOString();
+
+  // Set currentDay to the first uncompleted day
+  let found = false;
+  for (const day of CALIBRATION_DAYS) {
+    if (!data.days[day]?.completed) {
+      data.currentDay = day;
+      found = true;
+      break;
+    }
+  }
+  if (!found) {
+    data.currentDay = CALIBRATION_DAYS[CALIBRATION_DAYS.length - 1];
+  }
+
+  saveCalibrationData(data);
   return data;
 }
 
@@ -660,10 +705,6 @@ export function completeDay(day) {
     }
 
     saveCalibrationData(data);
-
-    // Sync to Supabase in background
-    const todayDate = new Date().toISOString().split('T')[0];
-    syncNutritionDay(todayDate, data.days[day], true);
   }
   return data;
 }
@@ -772,12 +813,9 @@ export function isInCalibrationPeriod() {
   // If not started, they're in calibration period (will start soon)
   if (!data.startedAt) return true;
 
-  // Check if it's been more than 7 days since start
-  const startDate = new Date(data.startedAt);
-  const now = new Date();
-  const daysSinceStart = Math.floor((now - startDate) / (1000 * 60 * 60 * 24));
-
-  return daysSinceStart < 7;
+  // Stay in calibration period until all 5 days are completed (or dismissed).
+  // No arbitrary time window — users can complete at their own pace.
+  return true;
 }
 
 /**
