@@ -85,13 +85,26 @@ export async function loadFromSupabase() {
       const localKey = COLUMN_TO_KEY[column];
       const value = data[column];
 
+      console.log(`[SimpleSync] Processing ${column}:`, {
+        localKey,
+        hasValue: value !== null && value !== undefined,
+        valueType: value === null ? 'null' : typeof value,
+        isArray: Array.isArray(value),
+        length: Array.isArray(value) ? value.length : (typeof value === 'object' && value ? Object.keys(value).length : 'n/a')
+      });
+
       if (value !== null && value !== undefined) {
         try {
           // Save directly to localStorage - NO transformation
-          setItem(localKey, JSON.stringify(value));
+          const jsonStr = JSON.stringify(value);
+          console.log(`[SimpleSync] Saving ${localKey}: ${jsonStr.length} bytes`);
+          setItem(localKey, jsonStr);
+          // Verify save
+          const verified = getItem(localKey);
+          console.log(`[SimpleSync] Verified ${localKey}: ${verified ? verified.length + ' bytes' : 'FAILED - null'}`);
           loaded.push(localKey);
-          console.log(`[SimpleSync] Loaded ${localKey} from ${column}`);
         } catch (e) {
+          console.error(`[SimpleSync] Failed to save ${localKey}:`, e);
           errors.push(`Failed to save ${localKey}: ${e.message}`);
         }
       }

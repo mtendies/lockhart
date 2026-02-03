@@ -397,7 +397,15 @@ export function getCalibrationData() {
  * Save calibration data
  */
 export function saveCalibrationData(data) {
+  console.log('[NutritionStore] saveCalibrationData called', {
+    key: STORAGE_KEY,
+    daysCount: Object.keys(data.days || {}).length,
+    data: data
+  });
   setItem(STORAGE_KEY, JSON.stringify(data));
+  // Verify it saved
+  const verified = getItem(STORAGE_KEY);
+  console.log('[NutritionStore] Verified save:', verified ? `${verified.length} bytes saved` : 'FAILED - null returned');
   // Sync to Supabase in background (debounced)
   syncNutrition();
 }
@@ -441,9 +449,11 @@ export function updateMealEntry(day, mealType, value) {
  * Also logs the entry as a nutrition activity for Focus Goal tracking
  */
 export function updateMealById(day, mealId, updates) {
+  console.log('[NutritionStore] updateMealById called', { day, mealId, updates });
   const data = getCalibrationData();
   if (data.days[day]?.meals) {
     const mealIndex = data.days[day].meals.findIndex(m => m.id === mealId);
+    console.log('[NutritionStore] Found meal at index:', mealIndex);
     if (mealIndex !== -1) {
       const previousContent = data.days[day].meals[mealIndex].content;
 
