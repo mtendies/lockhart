@@ -445,36 +445,67 @@ export function updateMealEntry(day, mealType, value) {
 /**
  * Update a specific meal by ID in the meals array
  * Also logs the entry as a nutrition activity for Focus Goal tracking
+ *
+ * IMPORTANT: If meal ID not found, this will ADD the meal to ensure saves never fail silently
  */
 export function updateMealById(day, mealId, updates) {
   const data = getCalibrationData();
-  if (data.days[day]?.meals) {
-    const mealIndex = data.days[day].meals.findIndex(m => m.id === mealId);
-    if (mealIndex !== -1) {
-      const previousContent = data.days[day].meals[mealIndex].content;
 
-      data.days[day].meals[mealIndex] = {
-        ...data.days[day].meals[mealIndex],
-        ...updates,
-      };
+  // Ensure day exists with meals array
+  if (!data.days[day]) {
+    data.days[day] = createEmptyDayWithMeals();
+  }
+  if (!data.days[day].meals) {
+    data.days[day].meals = [];
+  }
 
-      // Sync to legacy field if updating content
-      if (updates.content !== undefined) {
-        const mealType = data.days[day].meals[mealIndex].type;
-        if (data.days[day][mealType] !== undefined) {
-          data.days[day][mealType] = updates.content;
-        }
+  const mealIndex = data.days[day].meals.findIndex(m => m.id === mealId);
 
-        // Log as nutrition activity for Focus Goal tracking (only if new content)
-        if (updates.content && updates.content.trim() && updates.content !== previousContent) {
-          const mealLabel = data.days[day].meals[mealIndex].label || mealType;
-          logNutritionActivity(mealLabel, updates.content, day);
-        }
+  if (mealIndex !== -1) {
+    // FOUND: Update existing meal
+    const previousContent = data.days[day].meals[mealIndex].content;
+
+    data.days[day].meals[mealIndex] = {
+      ...data.days[day].meals[mealIndex],
+      ...updates,
+    };
+
+    // Sync to legacy field if updating content
+    if (updates.content !== undefined) {
+      const mealType = data.days[day].meals[mealIndex].type;
+      if (data.days[day][mealType] !== undefined) {
+        data.days[day][mealType] = updates.content;
       }
 
-      saveCalibrationData(data);
+      // Log as nutrition activity for Focus Goal tracking (only if new content)
+      if (updates.content && updates.content.trim() && updates.content !== previousContent) {
+        const mealLabel = data.days[day].meals[mealIndex].label || mealType;
+        logNutritionActivity(mealLabel, updates.content, day);
+      }
+    }
+  } else {
+    // NOT FOUND: Add the meal instead of silently failing
+    // This handles cases where component has different IDs than stored data
+    console.log(`[NutritionStore] Meal ${mealId} not found in ${day}, adding it`);
+
+    const newMeal = {
+      id: mealId,
+      type: updates.type || 'custom',
+      label: updates.label || 'Meal',
+      content: updates.content || '',
+      order: data.days[day].meals.length,
+      ...updates,
+    };
+
+    data.days[day].meals.push(newMeal);
+
+    // Log nutrition activity if there's content
+    if (updates.content && updates.content.trim()) {
+      logNutritionActivity(newMeal.label, updates.content, day);
     }
   }
+
+  saveCalibrationData(data);
   return data;
 }
 
