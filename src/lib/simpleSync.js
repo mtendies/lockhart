@@ -308,10 +308,18 @@ export function syncBookmarks() {
 }
 
 /**
- * Sync nutrition data to Supabase
+ * Sync nutrition data to Supabase (debounced, for frequent updates like typing)
  */
 export function syncNutrition() {
   return syncToSupabaseDebounced('health-advisor-nutrition-calibration');
+}
+
+/**
+ * Sync nutrition data to Supabase IMMEDIATELY (no debounce).
+ * Use for critical state changes: startCalibration, completeDay, etc.
+ */
+export function syncNutritionImmediate() {
+  return syncToSupabase('health-advisor-nutrition-calibration');
 }
 
 /**
@@ -345,6 +353,7 @@ export function createSyncHook() {
     syncNotes,
     syncBookmarks,
     syncNutrition,
+    syncNutritionImmediate,
     syncGrocery,
   };
 }
@@ -363,6 +372,7 @@ export default {
   syncNotes,
   syncBookmarks,
   syncNutrition,
+  syncNutritionImmediate,
   syncGrocery,
   SYNC_MAP,
 };

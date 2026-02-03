@@ -11,7 +11,7 @@
 import { getItem, setItem, removeItem } from './storageHelper';
 import { getProfile } from './store';
 import { logActivity, ACTIVITY_TYPES } from './activityLogStore';
-import { syncNutrition } from './lib/simpleSync';
+import { syncNutrition, syncNutritionImmediate } from './lib/simpleSync';
 
 const STORAGE_KEY = 'health-advisor-nutrition-calibration';
 const PROFILE_KEY = 'health-advisor-nutrition-profile';
@@ -379,11 +379,20 @@ export function getCalibrationData() {
   }
 
   // Initialize empty calibration structure
-  // IMPORTANT: Save immediately so meal IDs persist across calls
+  // IMPORTANT: Always set startedAt so Supabase never gets null
+  const now = new Date();
+  const dayOfWeek = now.getDay(); // 0=Sun, 1=Mon, ...
+  const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+  const monday = new Date(now);
+  monday.setDate(now.getDate() + diffToMonday);
+  monday.setHours(0, 0, 0, 0);
+
+  const todayKey = getTodayDayKey();
+
   const newData = {
-    startedAt: null,
+    startedAt: monday.toISOString(),
     completedAt: null,
-    currentDay: 'monday',
+    currentDay: todayKey || 'monday',
     days: {
       monday: createEmptyDayWithMeals(),
       tuesday: createEmptyDayWithMeals(),
@@ -400,12 +409,17 @@ export function getCalibrationData() {
 }
 
 /**
- * Save calibration data
+ * Save calibration data to localStorage and sync to Supabase.
+ * @param {object} data - The calibration data
+ * @param {boolean} immediate - If true, sync to Supabase immediately (no debounce)
  */
-export function saveCalibrationData(data) {
+export function saveCalibrationData(data, immediate = false) {
   setItem(STORAGE_KEY, JSON.stringify(data));
-  // Sync to Supabase in background (debounced)
-  syncNutrition();
+  if (immediate) {
+    syncNutritionImmediate();
+  } else {
+    syncNutrition();
+  }
 }
 
 /**
@@ -425,7 +439,7 @@ export function startCalibration() {
     monday.setHours(0, 0, 0, 0);
     data.startedAt = monday.toISOString();
     data.currentDay = getTodayDayKey() || 'monday';
-    saveCalibrationData(data);
+    saveCalibrationData(data, true); // immediate sync
   }
   return data;
 }
@@ -437,7 +451,7 @@ export function startCalibration() {
  */
 export function alignCalibrationToCurrentWeek() {
   const data = getCalibrationData();
-  if (!data.startedAt || data.completedAt) return data;
+  if (data.completedAt) return data;
 
   // Recalculate Monday of the current week
   const now = new Date();
@@ -461,7 +475,7 @@ export function alignCalibrationToCurrentWeek() {
     data.currentDay = CALIBRATION_DAYS[CALIBRATION_DAYS.length - 1];
   }
 
-  saveCalibrationData(data);
+  saveCalibrationData(data, true); // immediate sync
   return data;
 }
 
@@ -704,7 +718,7 @@ export function completeDay(day) {
       generateNutritionProfile(data);
     }
 
-    saveCalibrationData(data);
+    saveCalibrationData(data, true); // immediate sync — critical state change
   }
   return data;
 }
