@@ -20,6 +20,13 @@ const NUMBER_WORDS = {
   'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10,
   'half': 0.5, 'quarter': 0.25, 'a': 1, 'an': 1,
   'a couple': 2, 'couple': 2, 'a few': 3, 'few': 3, 'several': 3,
+  // Small/informal quantities
+  'sprinkle': 0.5,    // ~1/2 tbsp or ~1/2 oz
+  'drizzle': 1,       // ~1 tbsp
+  'dash': 0.25,       // ~1/4 tsp
+  'pinch': 0.1,       // tiny amount
+  'splash': 1,        // ~1 tbsp liquid
+  'dollop': 2,        // ~2 tbsp
 };
 
 // Unit normalization map
@@ -35,8 +42,12 @@ const UNIT_MAP = {
   'spoonful': 'spoonful', 'spoonfuls': 'spoonful',
   'piece': 'piece', 'pieces': 'piece',
   'slice': 'slice', 'slices': 'slice',
+  'strip': 'slice', 'strips': 'slice',  // bacon strips = slices
   'serving': 'serving', 'servings': 'serving',
   'glass': 'cup', 'glasses': 'cup',
+  'breast': 'breast', 'breasts': 'breast',  // chicken breast
+  'thigh': 'thigh', 'thighs': 'thigh',      // chicken thigh
+  'fillet': 'fillet', 'fillets': 'fillet',  // fish fillet
 };
 
 // Known brand names (to combine with generic products)
@@ -85,6 +96,10 @@ const FOOD_DATABASE = {
   'goat cheese': { cal: 75, unit: 'oz', serving: '1 oz', source: 'USDA' },
   'cream cheese': { cal: 50, unit: 'tbsp', serving: '1 tbsp', source: 'USDA' },
   'feta cheese': { cal: 75, unit: 'oz', serving: '1 oz', source: 'USDA' },
+  'feta': { cal: 50, unit: 'tbsp', serving: '1 tbsp crumbled', source: 'USDA' },
+  'parmesan': { cal: 22, unit: 'tbsp', serving: '1 tbsp grated', source: 'USDA' },
+  'cheddar': { cal: 115, unit: 'oz', serving: '1 oz', source: 'USDA' },
+  'mozzarella': { cal: 85, unit: 'oz', serving: '1 oz', source: 'USDA' },
   'cheese': { cal: 110, unit: 'oz', serving: '1 oz', source: 'USDA' },
 
   // Fruits
@@ -110,23 +125,42 @@ const FOOD_DATABASE = {
   'kimchi': { cal: 10, unit: 'cup', serving: '1/4 cup', source: 'USDA' },
   'vegetables': { cal: 50, unit: 'cup', serving: '1 cup', source: 'USDA' },
   'veggies': { cal: 50, unit: 'cup', serving: '1 cup', source: 'USDA' },
+  'greens': { cal: 8, unit: 'cup', serving: '1 cup', source: 'USDA' },
+  'mixed greens': { cal: 8, unit: 'cup', serving: '1 cup', source: 'USDA' },
+  'salad greens': { cal: 8, unit: 'cup', serving: '1 cup', source: 'USDA' },
+  'lettuce': { cal: 5, unit: 'cup', serving: '1 cup', source: 'USDA' },
+  'arugula': { cal: 5, unit: 'cup', serving: '1 cup', source: 'USDA' },
+  'beets': { cal: 60, unit: 'cup', serving: '1 cup', source: 'USDA' },
+  'beet': { cal: 60, unit: 'cup', serving: '1 cup', source: 'USDA' },
+  'cucumber': { cal: 16, unit: 'cup', serving: '1 cup', source: 'USDA' },
+  'tomato': { cal: 22, unit: 'tomato', serving: '1 medium', source: 'USDA' },
+  'tomatoes': { cal: 22, unit: 'tomato', serving: '1 medium', source: 'USDA' },
+  'bell pepper': { cal: 30, unit: 'pepper', serving: '1 medium', source: 'USDA' },
+  'onion': { cal: 45, unit: 'onion', serving: '1 medium', source: 'USDA' },
 
   // Proteins
   'scrambled eggs': { cal: 90, unit: 'egg', serving: '1 egg', source: 'USDA' },
+  'hard boiled egg': { cal: 78, unit: 'egg', serving: '1 large', source: 'USDA' },
+  'hardboiled egg': { cal: 78, unit: 'egg', serving: '1 large', source: 'USDA' },
+  'boiled egg': { cal: 78, unit: 'egg', serving: '1 large', source: 'USDA' },
+  'fried egg': { cal: 90, unit: 'egg', serving: '1 large', source: 'USDA' },
   'eggs': { cal: 70, unit: 'egg', serving: '1 large', source: 'USDA' },
   'egg': { cal: 70, unit: 'egg', serving: '1 large', source: 'USDA' },
-  'chicken breast': { cal: 165, unit: 'oz', serving: '4 oz', source: 'USDA' },
-  'grilled chicken': { cal: 165, unit: 'oz', serving: '4 oz', source: 'USDA' },
-  'chicken': { cal: 165, unit: 'oz', serving: '4 oz', source: 'USDA' },
-  'salmon': { cal: 200, unit: 'oz', serving: '4 oz', source: 'USDA' },
-  'tuna': { cal: 120, unit: 'oz', serving: '4 oz', source: 'USDA' },
+  'chicken breast': { cal: 280, unit: 'breast', serving: '1 breast (~6oz)', source: 'USDA' },
+  'grilled chicken breast': { cal: 280, unit: 'breast', serving: '1 breast (~6oz)', source: 'USDA' },
+  'chicken thigh': { cal: 180, unit: 'thigh', serving: '1 thigh (~4oz)', source: 'USDA' },
+  'grilled chicken': { cal: 45, unit: 'oz', serving: '1 oz', source: 'USDA' },
+  'chicken': { cal: 45, unit: 'oz', serving: '1 oz', source: 'USDA' },
+  'salmon': { cal: 50, unit: 'oz', serving: '1 oz', source: 'USDA' },
+  'salmon fillet': { cal: 280, unit: 'fillet', serving: '1 fillet (~6oz)', source: 'USDA' },
+  'tuna': { cal: 30, unit: 'oz', serving: '1 oz', source: 'USDA' },
   'steak': { cal: 270, unit: 'oz', serving: '6 oz', source: 'USDA' },
   'ground beef': { cal: 70, unit: 'oz', serving: '1 oz (cooked)', source: 'USDA' },
-  'beef': { cal: 250, unit: 'oz', serving: '4 oz', source: 'USDA' },
-  'turkey': { cal: 150, unit: 'oz', serving: '4 oz', source: 'USDA' },
-  'bacon': { cal: 40, unit: 'slice', serving: '1 slice', source: 'USDA' },
-  'tofu': { cal: 80, unit: 'oz', serving: '4 oz', source: 'USDA' },
-  'shrimp': { cal: 100, unit: 'oz', serving: '4 oz', source: 'USDA' },
+  'beef': { cal: 65, unit: 'oz', serving: '1 oz', source: 'USDA' },
+  'turkey': { cal: 40, unit: 'oz', serving: '1 oz', source: 'USDA' },
+  'bacon': { cal: 45, unit: 'slice', serving: '1 slice', source: 'USDA' },
+  'tofu': { cal: 20, unit: 'oz', serving: '1 oz', source: 'USDA' },
+  'shrimp': { cal: 25, unit: 'oz', serving: '1 oz', source: 'USDA' },
 
   // Grains
   'oatmeal': { cal: 150, unit: 'cup', serving: '1 cup cooked', source: 'USDA', isComposite: true },
@@ -154,8 +188,19 @@ const FOOD_DATABASE = {
   'peanuts': { cal: 170, unit: 'oz', serving: '1 oz', source: 'USDA' },
   'walnuts': { cal: 185, unit: 'oz', serving: '1 oz', source: 'USDA' },
   'cashews': { cal: 160, unit: 'oz', serving: '1 oz', source: 'USDA' },
+  'pecans': { cal: 195, unit: 'oz', serving: '1 oz', source: 'USDA' },
+  'pistachios': { cal: 160, unit: 'oz', serving: '1 oz', source: 'USDA' },
+  'mixed nuts': { cal: 170, unit: 'oz', serving: '1 oz', source: 'USDA' },
 
-  // Condiments
+  // Legumes & Beans
+  'chickpeas': { cal: 65, unit: 'handful', serving: '1/4 cup', source: 'USDA' },
+  'garbanzo beans': { cal: 65, unit: 'handful', serving: '1/4 cup', source: 'USDA' },
+  'black beans': { cal: 110, unit: 'cup', serving: '1/2 cup', source: 'USDA' },
+  'kidney beans': { cal: 110, unit: 'cup', serving: '1/2 cup', source: 'USDA' },
+  'lentils': { cal: 115, unit: 'cup', serving: '1/2 cup cooked', source: 'USDA' },
+  'edamame': { cal: 95, unit: 'cup', serving: '1/2 cup shelled', source: 'USDA' },
+
+  // Condiments & Dressings
   'honey': { cal: 60, unit: 'tbsp', serving: '1 tbsp', source: 'USDA' },
   'maple syrup': { cal: 50, unit: 'tbsp', serving: '1 tbsp', source: 'USDA' },
   'butter': { cal: 100, unit: 'tbsp', serving: '1 tbsp', source: 'USDA' },
@@ -164,9 +209,20 @@ const FOOD_DATABASE = {
   'oil': { cal: 120, unit: 'tbsp', serving: '1 tbsp', source: 'USDA' },
   'cocoa powder': { cal: 12, unit: 'tbsp', serving: '1 tbsp', source: 'USDA' },
   'cocoa': { cal: 12, unit: 'tbsp', serving: '1 tbsp', source: 'USDA' },
-  'dressing': { cal: 80, unit: 'tbsp', serving: '2 tbsp', source: 'USDA' },
+  'french dressing': { cal: 70, unit: 'tbsp', serving: '1 tbsp', source: 'USDA' },
+  'ranch dressing': { cal: 75, unit: 'tbsp', serving: '1 tbsp', source: 'USDA' },
+  'ranch': { cal: 75, unit: 'tbsp', serving: '1 tbsp', source: 'USDA' },
+  'italian dressing': { cal: 35, unit: 'tbsp', serving: '1 tbsp', source: 'USDA' },
+  'caesar dressing': { cal: 80, unit: 'tbsp', serving: '1 tbsp', source: 'USDA' },
+  'balsamic vinaigrette': { cal: 45, unit: 'tbsp', serving: '1 tbsp', source: 'USDA' },
+  'vinaigrette': { cal: 45, unit: 'tbsp', serving: '1 tbsp', source: 'USDA' },
+  'dressing': { cal: 70, unit: 'tbsp', serving: '1 tbsp', source: 'USDA' },
   'mayo': { cal: 90, unit: 'tbsp', serving: '1 tbsp', source: 'USDA' },
   'mayonnaise': { cal: 90, unit: 'tbsp', serving: '1 tbsp', source: 'USDA' },
+  'hummus': { cal: 25, unit: 'tbsp', serving: '1 tbsp', source: 'USDA' },
+  'salsa': { cal: 5, unit: 'tbsp', serving: '1 tbsp', source: 'USDA' },
+  'guacamole': { cal: 25, unit: 'tbsp', serving: '1 tbsp', source: 'USDA' },
+  'sour cream': { cal: 30, unit: 'tbsp', serving: '1 tbsp', source: 'USDA' },
 
   // Beverages
   'coffee': { cal: 5, unit: 'cup', serving: '1 cup black', source: 'USDA' },
@@ -291,7 +347,7 @@ function parseSegment(segment) {
   // Pattern: [quantity] [unit] (of) [food]
   // Examples: "2 tbsp of peanut butter", "1.5 cups almond milk", "1 banana", ".5 pounds beef"
   // Note: \.?\d+ handles decimals with or without leading zero (.5 or 0.5)
-  const unitPattern = /^(\.?\d+\.?\d*)\s*(tablespoons?|tbsp|teaspoons?|tsp|cups?|oz|ounces?|pounds?|lbs?|lb|grams?|g|scoops?|handfuls?|spoonfuls?|pieces?|slices?|servings?|glasses?)?\s*(?:of\s+)?(.+)$/i;
+  const unitPattern = /^(\.?\d+\.?\d*)\s*(tablespoons?|tbsp|teaspoons?|tsp|cups?|oz|ounces?|pounds?|lbs?|lb|grams?|g|scoops?|handfuls?|spoonfuls?|pieces?|slices?|strips?|servings?|glasses?|breasts?|thighs?|fillets?)?\s*(?:of\s+)?(.+)$/i;
 
   const match = text.match(unitPattern);
 
