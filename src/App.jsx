@@ -6,7 +6,7 @@ import FeedbackButton from './components/FeedbackButton';
 import AdminFeedback from './components/AdminFeedback';
 import * as dataService from './lib/dataService';
 import { useSimpleSync } from './hooks/useSimpleSync';
-import { migrateToNewSync, verifyMigration } from './lib/migrateSyncData';
+import { migrateToNewSync, verifyMigration, debugLocalStorage } from './lib/migrateSyncData';
 
 // Error boundary to catch and display React errors
 class ErrorBoundary extends Component {
@@ -99,12 +99,14 @@ function AppContent() {
     // ONE-TIME MIGRATION: Push localStorage to new JSONB columns
     window.__migrateToNewSync = migrateToNewSync;
     window.__verifyMigration = verifyMigration;
+    window.__debugLocalStorage = debugLocalStorage;
 
     return () => {
       delete window.__forceSupabasePull;
       delete window.__pushAllToSupabase;
       delete window.__migrateToNewSync;
       delete window.__verifyMigration;
+      delete window.__debugLocalStorage;
     };
   }, [refresh, pushAll]);
   const [profile, setProfile] = useState(null);
