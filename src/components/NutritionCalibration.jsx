@@ -672,16 +672,76 @@ function SourceDetailPopup({ item, onClose }) {
 /**
  * Calorie Estimator Popup - Mobile-friendly with detailed breakdown and selectable text
  */
+// Available units for the editable calorie popup dropdown
+const UNIT_OPTIONS = {
+  volume: ['tbsp', 'tsp', 'cup', 'oz', 'ml'],
+  weight: ['oz', 'g', 'lb'],
+  count: ['piece', 'slice', 'whole', 'serving', 'handful', 'scoop', 'egg', 'breast', 'thigh', 'fillet'],
+};
+
+function getUnitOptionsForItem(item) {
+  const unit = item.unit;
+  if (['tbsp', 'tsp', 'cup', 'ml'].includes(unit)) return [...new Set([unit, ...UNIT_OPTIONS.volume])];
+  if (['g', 'lb'].includes(unit)) return [...new Set([unit, ...UNIT_OPTIONS.weight])];
+  if (['oz'].includes(unit)) return [...new Set([unit, ...UNIT_OPTIONS.volume, ...UNIT_OPTIONS.weight])];
+  return [...new Set([unit, ...UNIT_OPTIONS.count])];
+}
+
+// Unit conversion factors (relative to each other)
+const UNIT_CONVERSIONS = {
+  'tbsp_to_tsp': 3, 'tsp_to_tbsp': 1/3,
+  'cup_to_tbsp': 16, 'tbsp_to_cup': 1/16,
+  'cup_to_oz': 8, 'oz_to_cup': 1/8,
+  'cup_to_tsp': 48, 'tsp_to_cup': 1/48,
+  'lb_to_oz': 16, 'oz_to_lb': 1/16,
+  'lb_to_g': 453.6, 'g_to_lb': 1/453.6,
+  'oz_to_g': 28.35, 'g_to_oz': 1/28.35,
+};
+
+function convertBetweenUnits(qty, from, to) {
+  if (from === to) return qty;
+  const key = `${from}_to_${to}`;
+  if (UNIT_CONVERSIONS[key]) return qty * UNIT_CONVERSIONS[key];
+  return qty; // no conversion available, keep quantity
+}
+
 function CalorieEstimatorPopup({ content, onClose }) {
   const [selectedItem, setSelectedItem] = useState(null);
-  const estimate = estimateCalories(content);
+  const initialEstimate = estimateCalories(content);
+
+  // Editable items state - each item gets its own quantity/unit
+  const [editableItems, setEditableItems] = useState(() =>
+    initialEstimate.items.map(item => ({
+      ...item,
+      editQty: item.quantity,
+      editUnit: item.unit,
+      calPerUnit: Math.round(item.calories / item.quantity) || item.calories,
+    }))
+  );
+
+  // Recalculate totals from editable items
+  const totalCalories = editableItems.reduce((sum, item) => sum + Math.round(item.calPerUnit * item.editQty), 0);
+
+  function handleQtyChange(idx, newQty) {
+    setEditableItems(prev => prev.map((item, i) =>
+      i === idx ? { ...item, editQty: newQty } : item
+    ));
+  }
+
+  function handleUnitChange(idx, newUnit) {
+    setEditableItems(prev => prev.map((item, i) => {
+      if (i !== idx) return item;
+      const converted = convertBetweenUnits(item.editQty, item.editUnit, newUnit);
+      return { ...item, editUnit: newUnit, editQty: Math.round(converted * 10) / 10 };
+    }));
+  }
 
   const confidenceLabels = {
     low: { text: 'Rough estimate', color: 'text-amber-600 bg-amber-50' },
     medium: { text: 'Moderate confidence', color: 'text-blue-600 bg-blue-50' },
     high: { text: 'Good estimate', color: 'text-green-600 bg-green-50' },
   };
-  const confidence = confidenceLabels[estimate.confidence] || confidenceLabels.low;
+  const confidence = confidenceLabels[initialEstimate.confidence] || confidenceLabels.low;
 
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center" onClick={onClose}>
@@ -700,7 +760,7 @@ function CalorieEstimatorPopup({ content, onClose }) {
               <div>
                 <h3 className="font-semibold text-gray-900 text-sm sm:text-base">Calorie Estimate</h3>
                 <span className={`text-xs px-1.5 py-0.5 rounded ${confidence.color}`}>
-                  {confidence.text}
+                  {confidence.text} - tap to adjust
                 </span>
               </div>
             </div>
@@ -714,34 +774,57 @@ function CalorieEstimatorPopup({ content, onClose }) {
         <div className="overflow-y-auto max-h-[calc(85vh-120px)] px-4 py-4 sm:px-5">
           {/* Total */}
           <div className="text-center mb-5 pb-4 border-b border-gray-100">
-            <p className="text-4xl sm:text-5xl font-bold text-orange-600">{estimate.totalCalories}</p>
+            <p className="text-4xl sm:text-5xl font-bold text-orange-600">{totalCalories}</p>
             <p className="text-sm text-gray-500 mt-1">estimated calories</p>
           </div>
 
-          {/* Line-item breakdown */}
-          {estimate.items && estimate.items.length > 0 && (
+          {/* Line-item breakdown - editable */}
+          {editableItems.length > 0 && (
             <div className="space-y-3">
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
-                Breakdown ({estimate.items.length} item{estimate.items.length !== 1 ? 's' : ''})
+                Breakdown ({editableItems.length} item{editableItems.length !== 1 ? 's' : ''})
               </p>
 
-              {estimate.items.map((item, idx) => (
-                <div key={idx} className="bg-gray-50 rounded-xl p-3 space-y-2">
-                  {/* Food name and calories */}
-                  <div className="flex items-start justify-between gap-2">
-                    <span className="text-sm font-medium text-gray-900">{item.food}</span>
-                    <span className="text-sm font-bold text-orange-600 whitespace-nowrap">{item.calories} cal</span>
-                  </div>
+              {editableItems.map((item, idx) => {
+                const itemCal = Math.round(item.calPerUnit * item.editQty);
+                const unitOptions = getUnitOptionsForItem(item);
 
-                  {/* Calculation detail */}
-                  <div className="text-xs text-gray-500 space-y-0.5">
-                    <p className="flex items-center gap-1">
-                      <span className="text-gray-400">Calc:</span>
-                      <span>{item.calculation}</span>
-                    </p>
+                return (
+                  <div key={idx} className="bg-gray-50 rounded-xl p-3 space-y-2">
+                    {/* Food name */}
+                    <div className="flex items-start justify-between gap-2">
+                      <span className="text-sm font-medium text-gray-900">{item.food}</span>
+                      <span className="text-sm font-bold text-orange-600 whitespace-nowrap">{itemCal} cal</span>
+                    </div>
+
+                    {/* Editable quantity and unit */}
+                    <div className="flex items-center gap-1.5 text-xs">
+                      <input
+                        type="number"
+                        value={item.editQty}
+                        onChange={(e) => handleQtyChange(idx, parseFloat(e.target.value) || 0)}
+                        min="0"
+                        step="0.25"
+                        className="w-14 px-1.5 py-1 border border-gray-300 rounded-md text-center text-sm font-medium focus:outline-none focus:ring-1 focus:ring-orange-400 focus:border-orange-400"
+                      />
+                      <select
+                        value={item.editUnit}
+                        onChange={(e) => handleUnitChange(idx, e.target.value)}
+                        className="px-1.5 py-1 border border-gray-300 rounded-md text-sm bg-white focus:outline-none focus:ring-1 focus:ring-orange-400 focus:border-orange-400"
+                      >
+                        {unitOptions.map(u => (
+                          <option key={u} value={u}>{u}</option>
+                        ))}
+                      </select>
+                      <span className="text-gray-400 mx-0.5">&times;</span>
+                      <span className="text-gray-600">{item.calPerUnit} cal/{item.unit}</span>
+                      <span className="text-gray-400 mx-0.5">=</span>
+                      <span className="font-semibold text-orange-600">{itemCal}</span>
+                    </div>
+
+                    {/* Source */}
                     {item.source && (
-                      <p className="flex items-center gap-1">
-                        <span className="text-gray-400">Source:</span>
+                      <div className="text-xs text-gray-500">
                         <button
                           onClick={() => setSelectedItem(item)}
                           className="text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1"
@@ -749,16 +832,16 @@ function CalorieEstimatorPopup({ content, onClose }) {
                           {item.source}
                           <Info size={10} />
                         </button>
-                      </p>
+                      </div>
                     )}
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
 
           {/* No items detected */}
-          {(!estimate.items || estimate.items.length === 0) && (
+          {editableItems.length === 0 && (
             <div className="text-center py-4">
               <p className="text-sm text-gray-500">No specific foods detected</p>
               <p className="text-xs text-gray-400 mt-1">Try being more specific with food names</p>
@@ -766,13 +849,13 @@ function CalorieEstimatorPopup({ content, onClose }) {
           )}
 
           {/* Tips */}
-          {estimate.tips && estimate.tips.length > 0 && (
+          {initialEstimate.tips && initialEstimate.tips.length > 0 && (
             <div className="mt-4 p-3 bg-amber-50 rounded-xl">
               <div className="flex gap-2">
                 <Info size={14} className="text-amber-600 flex-shrink-0 mt-0.5" />
                 <div className="text-xs text-amber-800">
                   <p className="font-medium mb-1">Did you know?</p>
-                  {estimate.tips.map((tip, idx) => (
+                  {initialEstimate.tips.map((tip, idx) => (
                     <p key={idx}>{tip}</p>
                   ))}
                 </div>
@@ -1691,9 +1774,19 @@ function SortableMealSetupItem({ meal, onRemove, canRemove }) {
 /**
  * Encouraging message shown after completing a day - clickable to edit
  */
-function DayCompletedMessage({ day, nextDay, onEdit }) {
+function DayCompletedMessage({ day, nextDay, onEdit, calibrationData }) {
   const dayLabel = DAY_LABELS[day];
   const nextDayLabel = nextDay ? DAY_LABELS[nextDay] : null;
+
+  // Calculate calorie total for the completed day
+  const dayData = calibrationData?.days?.[day];
+  const dayCalories = (dayData?.meals || []).reduce((total, meal) => {
+    if (meal.content && meal.content.trim()) {
+      const est = estimateCalories(meal.content);
+      return total + est.totalCalories;
+    }
+    return total;
+  }, 0);
 
   return (
     <div className="bg-gradient-to-r from-emerald-50 to-green-50 rounded-xl border border-emerald-200 p-4">
@@ -1704,6 +1797,11 @@ function DayCompletedMessage({ day, nextDay, onEdit }) {
         <div className="flex-1">
           <p className="font-medium text-emerald-800">
             Nice work logging {dayLabel}'s meals!
+            {dayCalories > 0 && (
+              <span className="ml-2 text-sm font-normal text-emerald-600">
+                (~{dayCalories.toLocaleString()} cal)
+              </span>
+            )}
           </p>
           {nextDayLabel ? (
             <p className="text-sm text-emerald-600 mt-1">
@@ -1801,7 +1899,7 @@ function DayEntry({
 
   // If today is done and we should show completed message
   if (isToday && dayCompleted && showCompletedMessage) {
-    return <DayCompletedMessage day={day} nextDay={nextDay} onEdit={onToggle} />;
+    return <DayCompletedMessage day={day} nextDay={nextDay} onEdit={onToggle} calibrationData={{ days: { [day]: dayData } }} />;
   }
 
   // Collapsed completed day (can be expanded to edit)
@@ -1864,6 +1962,15 @@ function DayEntry({
   // Today or expanded day - show full entry form
   const canComplete = canCompleteDay(day, profile);
 
+  // Calculate daily calorie total from all meals with content
+  const dailyCalories = meals.reduce((total, meal) => {
+    if (meal.content && meal.content.trim()) {
+      const est = estimateCalories(meal.content);
+      return total + est.totalCalories;
+    }
+    return total;
+  }, 0);
+
   return (
     <div className={`rounded-xl border ${dayCompleted ? 'bg-emerald-50/50 border-emerald-200' : 'bg-white border-gray-200'} overflow-hidden`}>
       {/* Header */}
@@ -1886,6 +1993,14 @@ function DayEntry({
           </span>
           {isToday && !dayCompleted && (
             <span className="text-xs bg-primary-100 text-primary-700 px-2 py-0.5 rounded-full">Today</span>
+          )}
+          {dailyCalories > 0 && (
+            <span className={`text-xs px-2 py-0.5 rounded-full flex items-center gap-1 ${
+              dayCompleted ? 'bg-emerald-100 text-emerald-600' : 'bg-orange-100 text-orange-600'
+            }`}>
+              <Flame size={10} />
+              ~{dailyCalories.toLocaleString()} cal
+            </span>
           )}
         </div>
         {isExpanded ? (
@@ -1929,12 +2044,23 @@ function DayEntry({
             existingTypes={meals.map(m => m.type)}
           />
 
+          {/* Daily total */}
+          {dailyCalories > 0 && (
+            <div className="mt-4 p-3 bg-orange-50 rounded-xl border border-orange-100 text-center">
+              <div className="flex items-center justify-center gap-2">
+                <Flame size={16} className="text-orange-500" />
+                <span className="text-lg font-bold text-orange-600">~{dailyCalories.toLocaleString()} cal</span>
+              </div>
+              <p className="text-xs text-orange-400 mt-0.5">estimated daily total</p>
+            </div>
+          )}
+
           {/* Complete day button */}
           {!dayCompleted && (
             <button
               onClick={onComplete}
               disabled={!canComplete}
-              className={`w-full mt-4 py-2.5 rounded-xl font-medium text-sm transition-colors ${
+              className={`w-full mt-3 py-2.5 rounded-xl font-medium text-sm transition-colors ${
                 canComplete
                   ? 'bg-emerald-500 text-white hover:bg-emerald-600'
                   : 'bg-gray-100 text-gray-400 cursor-not-allowed'
@@ -1953,7 +2079,7 @@ function DayEntry({
 
           {/* Already completed - just show info */}
           {dayCompleted && (
-            <div className="mt-4 p-2 bg-emerald-50 rounded-lg text-center">
+            <div className="mt-3 p-2 bg-emerald-50 rounded-lg text-center">
               <p className="text-xs text-emerald-600">
                 Changes are auto-saved. This day is marked complete.
               </p>
@@ -2028,8 +2154,29 @@ export default function NutritionCalibration({ onComplete, compact = false, prof
     const progress = getCalibrationProgress();
     const today = progress.todayDay;
 
+    // Auto-complete yesterday if it has all meals filled
+    const dayOrder = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'];
+    if (today) {
+      const todayIdx = dayOrder.indexOf(today);
+      if (todayIdx > 0) {
+        const yesterday = dayOrder[todayIdx - 1];
+        const yesterdayData = data.days[yesterday];
+        if (yesterdayData && !yesterdayData.completed && yesterdayData.meals?.length > 0) {
+          const allFilled = yesterdayData.meals.every(m => m.content && m.content.trim());
+          if (allFilled) {
+            const updated = completeDay(yesterday);
+            setCalibrationData(updated);
+          }
+        }
+      }
+    }
+
+    // Re-read data after potential auto-complete
+    const freshData = getCalibrationData();
+    setCalibrationData(freshData);
+
     // Expand today's entry if it's a weekday and not completed
-    if (today && data.days[today] && !data.days[today].completed) {
+    if (today && freshData.days[today] && !freshData.days[today].completed) {
       setExpandedDay(today);
     }
   }, [refreshKey, isLevel1, isFirstView, hasAccepted, needsMealSetup, showMealSetup]);
