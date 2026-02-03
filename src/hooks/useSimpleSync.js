@@ -5,7 +5,7 @@
  *   const { syncStatus, refresh } = useSimpleSync();
  */
 
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import {
   loadFromSupabase,
@@ -13,12 +13,15 @@ import {
   syncToSupabase,
 } from '../lib/simpleSync';
 
+// Module-level flag to prevent double loading across component remounts
+// This survives React StrictMode double-renders and component remounts
+let hasLoadedThisSession = false;
+
 export function useSimpleSync() {
   const { user, isAuthenticated } = useAuth();
-  const [syncStatus, setSyncStatus] = useState('idle'); // idle | loading | ready | error
+  const [syncStatus, setSyncStatus] = useState(hasLoadedThisSession ? 'ready' : 'idle');
   const [lastSynced, setLastSynced] = useState(null);
   const [error, setError] = useState(null);
-  const hasLoadedRef = useRef(false);
 
   // Load from Supabase on mount (when authenticated)
   useEffect(() => {
@@ -27,8 +30,10 @@ export function useSimpleSync() {
       return;
     }
 
-    // Only load once per session
-    if (hasLoadedRef.current) {
+    // Only load once per session (module-level check survives remounts)
+    if (hasLoadedThisSession) {
+      console.log('[useSimpleSync] Already loaded this session, skipping');
+      setSyncStatus('ready');
       return;
     }
 
@@ -42,14 +47,14 @@ export function useSimpleSync() {
       if (result.success) {
         setSyncStatus('ready');
         setLastSynced(new Date());
-        hasLoadedRef.current = true;
+        hasLoadedThisSession = true;
         console.log('[useSimpleSync] Load complete:', result.loaded);
 
-        // Trigger a page refresh to show the loaded data
-        // This ensures all components re-read from localStorage
-        if (result.loaded.length > 0) {
-          window.dispatchEvent(new Event('storage'));
-        }
+        // Dispatch custom event to notify components that sync is complete
+        // Components can listen for this to re-read data
+        window.dispatchEvent(new CustomEvent('supabase-sync-complete', {
+          detail: { loaded: result.loaded }
+        }));
       } else {
         setSyncStatus('error');
         setError(result.errors.join(', '));

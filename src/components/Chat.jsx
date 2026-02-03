@@ -252,6 +252,25 @@ export default function Chat({
     }
   }, []);
 
+  // Re-load chats when Supabase sync completes (data may have loaded from cloud)
+  useEffect(() => {
+    function handleSyncComplete(event) {
+      console.log('[Chat] Supabase sync complete, reloading chats');
+      const active = getActiveChats();
+      if (active.length > 0) {
+        setChats(active);
+        setArchivedChats(getArchivedChats());
+        // If we don't have a chat selected, select the first one
+        if (!currentChatId || !getChatById(currentChatId)) {
+          selectChat(active[0].id);
+        }
+      }
+    }
+
+    window.addEventListener('supabase-sync-complete', handleSyncComplete);
+    return () => window.removeEventListener('supabase-sync-complete', handleSyncComplete);
+  }, [currentChatId]);
+
   // Handle targetChatId from profile navigation
   useEffect(() => {
     if (targetChatId) {
