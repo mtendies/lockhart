@@ -472,8 +472,9 @@ function CompletedDaysDropdown({ progress, calibrationData, onEditDay }) {
         <div className="flex items-center gap-2">
           <span className="text-lg">{encouragement.icon}</span>
           <span className="text-sm font-medium text-amber-800">
-            Day {progress.completed + (progress.todayDay && !calibrationData.days[progress.todayDay]?.completed ? 1 : 0)} of 5
+            Day {Math.min(progress.completed + 1, 5)} of 5
             {progress.completed > 0 && progress.remaining > 0 && " - Keep it up!"}
+            {progress.completed === 5 && " - All done!"}
           </span>
         </div>
         <div className="flex items-center gap-2 text-amber-600">
@@ -2306,12 +2307,21 @@ export default function NutritionCalibration({ onComplete, compact = false, prof
 
   function handleCompleteDay(day) {
     const updatedData = completeDay(day);
-    setCalibrationData(updatedData);
+    // Re-read to get the updated currentDay
+    const freshData = getCalibrationData();
+    setCalibrationData(freshData);
     setJustCompleted(day);
-    setExpandedDay(null); // Collapse the day
+
+    // Expand the next uncompleted day
+    const nextDay = freshData.currentDay;
+    if (nextDay && nextDay !== day && !freshData.days[nextDay]?.completed) {
+      setExpandedDay(nextDay);
+    } else {
+      setExpandedDay(null);
+    }
 
     // If all complete, notify parent
-    if (updatedData.completedAt) {
+    if (freshData.completedAt) {
       onComplete?.();
     }
   }

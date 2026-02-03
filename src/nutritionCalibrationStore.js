@@ -622,8 +622,7 @@ export function resetDayToDefault(day) {
 }
 
 /**
- * Mark a day as complete
- * NOTE: Does NOT auto-advance to next day - that's determined by calendar date
+ * Mark a day as complete and advance to the next uncompleted day
  */
 export function completeDay(day) {
   const data = getCalibrationData();
@@ -631,10 +630,25 @@ export function completeDay(day) {
     data.days[day].completed = true;
     data.days[day].completedAt = new Date().toISOString();
 
-    // Update currentDay to today's day if it's a valid calibration day
-    const today = getTodayDayKey();
-    if (CALIBRATION_DAYS.includes(today)) {
-      data.currentDay = today;
+    // Advance currentDay to the next uncompleted day
+    const dayIndex = CALIBRATION_DAYS.indexOf(day);
+    let advanced = false;
+    for (let i = dayIndex + 1; i < CALIBRATION_DAYS.length; i++) {
+      if (!data.days[CALIBRATION_DAYS[i]]?.completed) {
+        data.currentDay = CALIBRATION_DAYS[i];
+        advanced = true;
+        break;
+      }
+    }
+    // If no uncompleted day found after this one, check from the start
+    if (!advanced) {
+      for (let i = 0; i < CALIBRATION_DAYS.length; i++) {
+        if (!data.days[CALIBRATION_DAYS[i]]?.completed) {
+          data.currentDay = CALIBRATION_DAYS[i];
+          advanced = true;
+          break;
+        }
+      }
     }
 
     // Check if all days are complete
