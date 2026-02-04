@@ -424,10 +424,11 @@ function AppContent() {
 
     setAnalyzingCheckIn(true);
     try {
-      const res = await fetch('/api/analyze-checkin', {
+      const res = await fetch('/api/checkin', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          action: 'analyze',
           checkIn: checkInData,
           playbook,
           profile,
