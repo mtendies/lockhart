@@ -760,10 +760,10 @@ function CalorieEstimatorPopup({ content, dayKey, mealId, onClose, onSaveCalorie
   // Recalculate totals from editable items
   const totalCalories = editableItems.reduce((sum, item) => sum + Math.round(item.calPerUnit * item.editQty), 0);
 
-  // Save calorie override when closing if user adjusted quantities
+  // Always save the displayed calorie total as override on close
+  // so the daily total reflects the AI estimate (not just the rule-based fallback)
   function handleClose() {
-    const originalTotal = activeEstimate.totalCalories;
-    if (totalCalories !== originalTotal && dayKey && mealId) {
+    if (totalCalories > 0 && dayKey && mealId) {
       updateMealById(dayKey, mealId, { calorieOverride: totalCalories });
       onSaveCalories?.();
     }
