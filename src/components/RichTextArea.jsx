@@ -49,7 +49,7 @@ export default function RichTextArea({ value, onChange, hint, minRows = 4 }) {
           type="button"
           onMouseDown={e => e.preventDefault()}
           onClick={() => execCmd('bold')}
-          className="p-1.5 rounded-md text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-all"
+          className="p-2.5 rounded-md text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-all"
           title="Bold (Cmd+B)"
         >
           <Bold size={14} />
@@ -58,7 +58,7 @@ export default function RichTextArea({ value, onChange, hint, minRows = 4 }) {
           type="button"
           onMouseDown={e => e.preventDefault()}
           onClick={() => execCmd('italic')}
-          className="p-1.5 rounded-md text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-all"
+          className="p-2.5 rounded-md text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-all"
           title="Italic (Cmd+I)"
         >
           <Italic size={14} />
@@ -67,7 +67,7 @@ export default function RichTextArea({ value, onChange, hint, minRows = 4 }) {
           type="button"
           onMouseDown={e => e.preventDefault()}
           onClick={() => execCmd('insertUnorderedList')}
-          className="p-1.5 rounded-md text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-all"
+          className="p-2.5 rounded-md text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-all"
           title="Bullet list"
         >
           <List size={14} />

@@ -97,7 +97,7 @@ export default function MessageActions({
       {showRegenerate && onRegenerate && (
         <button
           onClick={onRegenerate}
-          className="p-1.5 rounded-md text-gray-400 hover:text-primary-600 hover:bg-primary-50 transition-colors"
+          className="p-2.5 rounded-md text-gray-400 hover:text-primary-600 hover:bg-primary-50 transition-colors"
           title="Regenerate response"
         >
           <RefreshCw size={14} />
@@ -107,7 +107,7 @@ export default function MessageActions({
       {/* Copy Button */}
       <button
         onClick={handleCopy}
-        className={`p-1.5 rounded-md transition-colors ${
+        className={`p-2.5 rounded-md transition-colors ${
           copied
             ? 'bg-emerald-100 text-emerald-600'
             : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
@@ -121,7 +121,7 @@ export default function MessageActions({
       <div className="relative">
         <button
           onClick={() => setShowShareMenu(!showShareMenu)}
-          className="p-1.5 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+          className="p-2.5 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
           title="Share"
         >
           <Share2 size={14} />
@@ -168,7 +168,7 @@ export default function MessageActions({
       {/* Bookmark Button */}
       <button
         onClick={handleBookmark}
-        className={`p-1.5 rounded-md transition-colors ${
+        className={`p-2.5 rounded-md transition-colors ${
           bookmarked
             ? 'bg-amber-100 text-amber-600'
             : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
@@ -182,7 +182,7 @@ export default function MessageActions({
       {showArchive && onArchive && (
         <button
           onClick={onArchive}
-          className="p-1.5 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+          className="p-2.5 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
           title="Archive message"
         >
           <Archive size={14} />

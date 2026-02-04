@@ -104,7 +104,7 @@ export default function ProfileView({
             <h2 className="font-semibold text-gray-900">Personal Info</h2>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <InfoItem icon={User} label="Name" value={profile.name} />
             <InfoItem icon={Calendar} label="Age" value={profile.age ? `${profile.age} years` : null} />
             <InfoItem icon={Ruler} label="Height" value={formatHeight(profile.height)} />
@@ -199,7 +199,7 @@ export default function ProfileView({
               <h2 className="font-semibold text-gray-900">Wellbeing</h2>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {profile.sleepHours && (
                 <div>
                   <span className="text-sm text-gray-500">Sleep: </span>

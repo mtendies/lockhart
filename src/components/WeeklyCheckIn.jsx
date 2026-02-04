@@ -1059,7 +1059,7 @@ export default function WeeklyCheckIn({ profile, playbook, onCheckInComplete, on
               <label className="text-sm font-medium text-gray-700 mb-3 block">
                 How was your energy this week overall?
               </label>
-              <div className="grid grid-cols-4 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 <EmojiButton emoji="😫" label="Low" selected={energy === 'low'} onClick={() => setEnergy('low')} />
                 <EmojiButton emoji="😐" label="Okay" selected={energy === 'okay'} onClick={() => setEnergy('okay')} />
                 <EmojiButton emoji="🙂" label="Good" selected={energy === 'good'} onClick={() => setEnergy('good')} />
@@ -1072,7 +1072,7 @@ export default function WeeklyCheckIn({ profile, playbook, onCheckInComplete, on
               <label className="text-sm font-medium text-gray-700 mb-3 block">
                 How was your sleep quality?
               </label>
-              <div className="grid grid-cols-4 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 <EmojiButton emoji="😫" label="Poor" selected={sleep === 'poor'} onClick={() => setSleep('poor')} />
                 <EmojiButton emoji="😐" label="Fair" selected={sleep === 'fair'} onClick={() => setSleep('fair')} />
                 <EmojiButton emoji="🙂" label="Good" selected={sleep === 'good'} onClick={() => setSleep('good')} />

@@ -73,7 +73,7 @@ export default function NavBar({ currentView, onNavigate, pendingSuggestionCount
                 <button
                   key={item.id}
                   onClick={() => onNavigate(item.id)}
-                  className={`relative flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-lg transition-colors ${
+                  className={`relative flex flex-col items-center gap-0.5 px-3 py-2.5 rounded-lg transition-colors ${
                     active
                       ? 'text-primary-600'
                       : 'text-gray-400 hover:text-gray-600'
