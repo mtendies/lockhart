@@ -39,6 +39,7 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import { estimateCalories, SOURCE_URLS } from '../calorieEstimator';
+import { estimateCaloriesAI, getCachedOrRuleBased } from '../aiCalorieEstimator';
 import { getPlaybook } from '../playbookStore';
 import { logActivity, ACTIVITY_TYPES, ACTIVITY_SOURCES, WORKOUT_TYPES } from '../activityLogStore';
 import DeleteConfirmationModal from './DeleteConfirmationModal';
@@ -188,7 +189,8 @@ function getTodaysCaloriesFromMeals(meals) {
       if (typeof meal.calorieOverride === 'number') {
         return total + meal.calorieOverride;
       }
-      const estimate = estimateCalories(meal.content);
+      // Use cached AI result if available, else fall back to rule-based
+      const estimate = getCachedOrRuleBased(meal.content);
       return total + estimate.totalCalories;
     }
     return total;
@@ -870,7 +872,7 @@ function DraggableMealSlot({ meal, dayKey, index, onUpdate, onSaveCalories, onDr
   }
 
   const hasMeal = meal.content?.trim();
-  const calorieEstimate = hasMeal ? estimateCalories(meal.content) : null;
+  const calorieEstimate = hasMeal ? getCachedOrRuleBased(meal.content) : null;
   const displayCalories = typeof meal.calorieOverride === 'number' ? meal.calorieOverride : calorieEstimate?.totalCalories;
   const hasCalories = calorieEstimate && displayCalories > 0;
 
@@ -1001,6 +1003,7 @@ function DraggableMealSlot({ meal, dayKey, index, onUpdate, onSaveCalories, onDr
       {showCalories && calorieEstimate && (
         <CaloriePopup
           estimate={calorieEstimate}
+          mealText={meal.content}
           dayKey={dayKey}
           mealId={meal.id}
           onClose={() => setShowCalories(false)}
@@ -1129,14 +1132,42 @@ function convertBetweenUnits(qty, from, to) {
 }
 
 // Calorie Popup Component - Shows calorie breakdown with editable servings
-function CaloriePopup({ estimate, dayKey, mealId, onClose, onSaveCalories }) {
+function CaloriePopup({ estimate: fallbackEstimate, mealText, dayKey, mealId, onClose, onSaveCalories }) {
   const [selectedItem, setSelectedItem] = useState(null);
   const [confidenceTooltipIdx, setConfidenceTooltipIdx] = useState(null);
   const qtyInputRefs = useRef([]);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [activeEstimate, setActiveEstimate] = useState(fallbackEstimate);
+  const [isAI, setIsAI] = useState(fallbackEstimate?.isAI || false);
+
+  // Fetch AI estimate on mount
+  useEffect(() => {
+    if (!mealText) return;
+    let cancelled = false;
+    setAiLoading(true);
+    estimateCaloriesAI(mealText).then(({ estimate: aiEst, isAI: gotAI }) => {
+      if (cancelled) return;
+      setActiveEstimate(aiEst);
+      setIsAI(gotAI);
+      // Update editable items with AI result
+      setEditableItems(
+        (aiEst?.items || []).map(item => ({
+          ...item,
+          editQty: item.quantity,
+          editUnit: item.unit,
+          calPerUnit: Math.round(item.calories / item.quantity) || item.calories,
+        }))
+      );
+      setAiLoading(false);
+    }).catch(() => {
+      if (!cancelled) setAiLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [mealText]);
 
   // Editable items state - each item gets its own quantity/unit
   const [editableItems, setEditableItems] = useState(() =>
-    (estimate?.items || []).map(item => ({
+    (activeEstimate?.items || []).map(item => ({
       ...item,
       editQty: item.quantity,
       editUnit: item.unit,
@@ -1148,7 +1179,7 @@ function CaloriePopup({ estimate, dayKey, mealId, onClose, onSaveCalories }) {
 
   // Save calorie override when closing if user adjusted quantities
   function handleClose() {
-    const originalTotal = estimate.totalCalories;
+    const originalTotal = activeEstimate?.totalCalories || 0;
     if (totalCalories !== originalTotal && dayKey && mealId) {
       updateMealById(dayKey, mealId, { calorieOverride: totalCalories });
       onSaveCalories?.();
@@ -1170,14 +1201,14 @@ function CaloriePopup({ estimate, dayKey, mealId, onClose, onSaveCalories }) {
     }));
   }
 
-  if (!estimate) return null;
+  if (!activeEstimate) return null;
 
   const confidenceLabels = {
     low: { text: 'Low confidence', color: 'text-amber-600 bg-amber-50' },
     medium: { text: 'Medium confidence', color: 'text-blue-600 bg-blue-50' },
     high: { text: 'High confidence', color: 'text-green-600 bg-green-50' },
   };
-  const confidence = confidenceLabels[estimate.confidence] || confidenceLabels.low;
+  const confidence = confidenceLabels[activeEstimate.confidence] || confidenceLabels.low;
 
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center" onClick={handleClose}>
@@ -1195,9 +1226,17 @@ function CaloriePopup({ estimate, dayKey, mealId, onClose, onSaveCalories }) {
               </div>
               <div>
                 <h3 className="font-semibold text-gray-900 text-sm sm:text-base">Calorie Estimate</h3>
-                <span className={`text-xs px-1.5 py-0.5 rounded ${confidence.color}`}>
-                  {confidence.text}
-                </span>
+                <div className="flex items-center gap-1.5">
+                  <span className={`text-xs px-1.5 py-0.5 rounded ${confidence.color}`}>
+                    {confidence.text}
+                  </span>
+                  {isAI && !aiLoading && (
+                    <span className="text-xs px-1.5 py-0.5 rounded bg-violet-50 text-violet-600">AI</span>
+                  )}
+                  {aiLoading && (
+                    <Loader2 size={12} className="text-violet-500 animate-spin" />
+                  )}
+                </div>
               </div>
             </div>
             <button onClick={handleClose} className="p-2 hover:bg-gray-100 rounded-lg -mr-1">
@@ -1210,7 +1249,7 @@ function CaloriePopup({ estimate, dayKey, mealId, onClose, onSaveCalories }) {
         <div className="overflow-y-auto max-h-[calc(85vh-120px)] px-4 py-4 sm:px-5">
           {/* Total */}
           <div className="text-center mb-5 pb-4 border-b border-gray-100">
-            <p className="text-4xl sm:text-5xl font-bold text-orange-600">{totalCalories}</p>
+            <p className={`text-4xl sm:text-5xl font-bold text-orange-600 ${aiLoading ? 'opacity-50' : ''}`}>{totalCalories}</p>
             <p className="text-sm text-gray-500 mt-1">estimated calories</p>
           </div>
 
@@ -1318,11 +1357,11 @@ function CaloriePopup({ estimate, dayKey, mealId, onClose, onSaveCalories }) {
             </div>
           )}
 
-          {/* Tips */}
-          {estimate.tips && estimate.tips.length > 0 && (
+          {/* Tips / AI notes */}
+          {activeEstimate.tips && activeEstimate.tips.length > 0 && (
             <div className="mt-4 p-3 bg-amber-50 rounded-xl">
-              <p className="text-xs font-medium text-amber-700 mb-1">💡 Tip</p>
-              {estimate.tips.map((tip, idx) => (
+              <p className="text-xs font-medium text-amber-700 mb-1">💡 {isAI ? 'Note' : 'Tip'}</p>
+              {activeEstimate.tips.map((tip, idx) => (
                 <p key={idx} className="text-xs text-amber-600">{tip}</p>
               ))}
             </div>
@@ -1332,7 +1371,7 @@ function CaloriePopup({ estimate, dayKey, mealId, onClose, onSaveCalories }) {
         {/* Footer - sticky */}
         <div className="sticky bottom-0 bg-white border-t border-gray-100 px-4 py-3 sm:px-5 sm:py-4">
           <p className="text-xs text-gray-400 text-center">
-            Estimates based on USDA FoodData Central & manufacturer labels
+            {isAI ? 'Powered by AI — estimates may vary' : 'Estimates based on USDA FoodData Central & manufacturer labels'}
           </p>
         </div>
       </div>
