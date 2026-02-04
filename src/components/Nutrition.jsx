@@ -173,6 +173,7 @@ export default function Nutrition({ profile, playbook, onGroceryDataChange, onPl
         body: formData,
       });
 
+      if (!res.ok) throw new Error(`Server error: ${res.status}`);
       const result = await res.json();
 
       if (result.needsManualInput) {
@@ -252,6 +253,7 @@ export default function Nutrition({ profile, playbook, onGroceryDataChange, onPl
         }),
       });
 
+      if (!res.ok) throw new Error(`Server error: ${res.status}`);
       const result = await res.json();
 
       // Handle playbook suggestions
@@ -290,6 +292,7 @@ export default function Nutrition({ profile, playbook, onGroceryDataChange, onPl
         }),
       });
 
+      if (!res.ok) throw new Error(`Server error: ${res.status}`);
       const result = await res.json();
       if (result.error) {
         setSearchResult({ error: result.error });
@@ -318,6 +321,7 @@ export default function Nutrition({ profile, playbook, onGroceryDataChange, onPl
         }),
       });
 
+      if (!res.ok) throw new Error(`Server error: ${res.status}`);
       const result = await res.json();
       let updatedData = data;
 

@@ -21,6 +21,9 @@ const SYNC_MAP = {
   'health-advisor-bookmarks': 'bookmarks_data',
   'health-advisor-nutrition-calibration': 'nutrition_data',
   'health-advisor-groceries': 'grocery_data',
+  'health-advisor-focus-goals': 'goals_data',
+  'health-advisor-goal-history': 'goal_history_data',
+  'health-advisor-swaps': 'swaps_data',
 };
 
 /**

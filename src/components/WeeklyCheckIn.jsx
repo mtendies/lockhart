@@ -13,6 +13,7 @@ import {
   Sparkles,
   MessageCircle,
   RefreshCw,
+  Plus,
 } from 'lucide-react';
 import {
   addCheckIn,
@@ -29,6 +30,12 @@ import {
 } from '../activityLogStore';
 import { getWeeklyFocusProgress, generateWeeklyWins } from '../weeklyProgressStore';
 import { getCalibrationData, CALIBRATION_DAYS, getTodayDayKey } from '../nutritionCalibrationStore';
+import {
+  getGoalsWithProgress,
+  performWeeklyTransition,
+  addGoal as addFocusGoal,
+  canAddGoal,
+} from '../focusGoalStore';
 
 // Get week date range string
 function getWeekDateRange() {
@@ -140,89 +147,165 @@ function EmojiButton({ emoji, label, selected, onClick }) {
   );
 }
 
-// Focus Goal Review Item - Mobile optimized
-function FocusGoalReviewItem({ item, progress, onBlockerChange, blockerText }) {
-  const [showBlockerInput, setShowBlockerInput] = useState(false);
-  const isComplete = progress?.complete;
-  const current = progress?.current || 0;
-  const target = progress?.target || 1;
-  const progressPercent = Math.min(100, Math.round((current / target) * 100));
+// Goal Review Item - New system with keep/carry/drop actions
+function GoalReviewItem({ goal, decision, onDecisionChange }) {
+  const isComplete = goal.status === 'completed';
+  const current = goal.current || 0;
+  const target = goal.target || 1;
 
   let statusText = '';
   if (isComplete) {
-    statusText = 'You crushed it!';
+    statusText = 'Great work!';
   } else if (current === 0) {
     statusText = "Didn't get to it this week";
-  } else if (progressPercent >= 80) {
-    statusText = 'So close! Almost there';
+  } else if (current >= target * 0.8) {
+    statusText = 'Almost there!';
   } else {
     statusText = `Made some progress (${current}/${target})`;
   }
+
+  const promptText = isComplete
+    ? 'Keep this goal for next week?'
+    : 'Carry to next week?';
 
   return (
     <div className={`rounded-xl p-4 ${
       isComplete ? 'bg-green-50 border border-green-200' : 'bg-white border border-gray-200'
     }`}>
       <div className="flex items-start gap-3">
-        {/* Status indicator */}
         <div className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 ${
           isComplete
             ? 'bg-green-500 text-white'
+            : goal.carriedFrom
+            ? 'bg-amber-400 text-white'
             : current > 0
             ? 'bg-amber-100 text-amber-600 border-2 border-amber-300'
             : 'bg-gray-100 text-gray-400 border-2 border-gray-300'
         }`}>
           {isComplete ? (
             <Check size={14} strokeWidth={3} />
-          ) : current > 0 ? (
-            <span className="text-xs font-bold">~</span>
+          ) : goal.carriedFrom ? (
+            <RefreshCw size={10} />
           ) : (
-            <span className="text-xs font-bold">-</span>
+            <span className="text-xs font-bold">{current > 0 ? '~' : '-'}</span>
           )}
         </div>
 
         <div className="flex-1 min-w-0">
-          {/* Goal text */}
           <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
             <span className={`text-sm font-medium ${isComplete ? 'text-green-800' : 'text-gray-800'}`}>
-              {item.action}
+              {goal.text}
             </span>
             <span className={`text-sm font-semibold flex-shrink-0 ${
               isComplete ? 'text-green-600' : 'text-gray-500'
             }`}>
-              ({current}/{target}) {isComplete && '✓'}
+              ({current}/{target}) {isComplete && '\u2713'}
             </span>
           </div>
 
-          {/* Status text */}
-          <p className={`text-xs ${isComplete ? 'text-green-600' : 'text-gray-500'}`}>
-            {statusText}
+          <p className={`text-xs mb-3 ${isComplete ? 'text-green-600' : 'text-gray-500'}`}>
+            {statusText} {promptText}
           </p>
 
-          {/* Blocker input for incomplete goals */}
-          {!isComplete && (
-            <div className="mt-3">
-              {showBlockerInput ? (
-                <textarea
-                  value={blockerText || ''}
-                  onChange={(e) => onBlockerChange(e.target.value)}
-                  placeholder="What got in the way? (optional)"
-                  rows={2}
-                  className="w-full px-3 py-2 text-sm bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
-                />
-              ) : (
+          {/* Action buttons */}
+          <div className="flex flex-wrap gap-2">
+            {isComplete ? (
+              <>
                 <button
                   type="button"
-                  onClick={() => setShowBlockerInput(true)}
-                  className="text-xs text-indigo-600 hover:text-indigo-700 py-1"
+                  onClick={() => onDecisionChange(goal.id, 'keep')}
+                  className={`px-3 py-1.5 text-xs rounded-lg border transition-colors ${
+                    decision === 'keep'
+                      ? 'bg-green-600 text-white border-green-600'
+                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                  }`}
                 >
-                  + What got in the way? (optional)
+                  <Check size={12} className="inline mr-1" />Keep as recurring
                 </button>
-              )}
-            </div>
-          )}
+                <button
+                  type="button"
+                  onClick={() => onDecisionChange(goal.id, 'drop')}
+                  className={`px-3 py-1.5 text-xs rounded-lg border transition-colors ${
+                    decision === 'drop'
+                      ? 'bg-gray-600 text-white border-gray-600'
+                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  Drop
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={() => onDecisionChange(goal.id, 'carry')}
+                  className={`px-3 py-1.5 text-xs rounded-lg border transition-colors ${
+                    decision === 'carry'
+                      ? 'bg-amber-500 text-white border-amber-500'
+                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  <RefreshCw size={12} className="inline mr-1" />Carry over
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onDecisionChange(goal.id, 'drop')}
+                  className={`px-3 py-1.5 text-xs rounded-lg border transition-colors ${
+                    decision === 'drop'
+                      ? 'bg-gray-600 text-white border-gray-600'
+                      : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  Drop
+                </button>
+              </>
+            )}
+          </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// Next week preview section
+function NextWeekGoalPreview({ goals, decisions }) {
+  const recurring = [];
+  const carried = [];
+
+  for (const goal of goals) {
+    const d = decisions[goal.id];
+    if (d === 'keep') {
+      recurring.push(goal);
+    } else if (d === 'carry') {
+      carried.push(goal);
+    }
+  }
+
+  if (recurring.length === 0 && carried.length === 0) return null;
+
+  return (
+    <div className="mt-4 pt-4 border-t border-gray-200">
+      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Next Week's Goals</p>
+      {recurring.length > 0 && (
+        <div className="mb-2">
+          <p className="text-xs text-gray-400 mb-1">Recurring:</p>
+          {recurring.map((g, i) => (
+            <p key={i} className="text-sm text-gray-700 pl-3">
+              {i + 1}. {g.text} ({g.type})
+            </p>
+          ))}
+        </div>
+      )}
+      {carried.length > 0 && (
+        <div>
+          <p className="text-xs text-gray-400 mb-1">Carried over:</p>
+          {carried.map((g, i) => (
+            <p key={i} className="text-sm text-amber-700 pl-3">
+              {recurring.length + i + 1}. {g.text} (reset to 0/{g.target})
+            </p>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -668,6 +751,19 @@ export default function WeeklyCheckIn({ profile, playbook, onCheckInComplete, on
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
   const [userFeedback, setUserFeedback] = useState('');
   const [focusBlockers, setFocusBlockers] = useState({});
+  const [goalDecisions, setGoalDecisions] = useState(() => {
+    // Default: keep completed recurring, carry incomplete, drop completed one-time
+    const goals = getGoalsWithProgress();
+    const defaults = {};
+    for (const g of goals) {
+      if (g.status === 'completed') {
+        defaults[g.id] = g.type === 'recurring' ? 'keep' : 'drop';
+      } else {
+        defaults[g.id] = 'carry';
+      }
+    }
+    return defaults;
+  });
   const [energy, setEnergy] = useState(null);
   const [sleep, setSleep] = useState(null);
   const [notes, setNotes] = useState('');
@@ -687,6 +783,7 @@ export default function WeeklyCheckIn({ profile, playbook, onCheckInComplete, on
   const focusProgress = getWeeklyFocusProgress();
   const weeklyFocus = playbook?.weeklyFocus || [];
   const nutritionData = getCalibrationData();
+  const focusGoals = getGoalsWithProgress();
 
   const hasData = activities.length > 0 ||
     (nutritionData?.days && Object.values(nutritionData.days).some(d => d?.meals?.some(m => m.content?.trim())));
@@ -808,6 +905,16 @@ export default function WeeklyCheckIn({ profile, playbook, onCheckInComplete, on
     setSubmitting(true);
 
     try {
+      // Build goal review data for check-in history
+      const goalReview = focusGoals.map(g => ({
+        id: g.id,
+        text: g.text,
+        current: g.current,
+        target: g.target,
+        status: g.status,
+        decision: goalDecisions[g.id] || 'drop',
+      }));
+
       const checkInData = {
         weekSummary,
         summarySections,
@@ -816,17 +923,20 @@ export default function WeeklyCheckIn({ profile, playbook, onCheckInComplete, on
         energy,
         sleep,
         notes,
-        focusProgress: focusProgress.map((fp, idx) => ({
-          action: weeklyFocus[idx]?.action || '',
-          current: fp.progress?.current || 0,
-          target: fp.progress?.target || 1,
-          complete: fp.progress?.complete || false,
-          blocker: focusBlockers[idx] || null,
-        })),
-        completedGoals: focusProgress.filter(fp => fp.progress?.complete).length,
-        totalGoals: focusProgress.length,
+        goalReview,
+        completedGoals: focusGoals.filter(g => g.status === 'completed').length,
+        totalGoals: focusGoals.length,
         detailPreference,
       };
+
+      // Transition goals to next week based on user decisions
+      if (focusGoals.length > 0) {
+        const decisions = Object.entries(goalDecisions).map(([goalId, action]) => ({
+          goalId,
+          action,
+        }));
+        performWeeklyTransition(decisions);
+      }
 
       addCheckIn(checkInData);
       clearDraft();
@@ -850,8 +960,6 @@ export default function WeeklyCheckIn({ profile, playbook, onCheckInComplete, on
   if (step === 'complete') {
     return <CheckInComplete wins={wins} suggestions={suggestions} onBack={handleBackToHome} />;
   }
-
-  const completedGoals = focusProgress.filter(fp => fp.progress?.complete).length;
 
   return (
     <div className="fixed inset-0 z-50 bg-gray-50 overflow-y-auto overscroll-contain">
@@ -904,7 +1012,7 @@ export default function WeeklyCheckIn({ profile, playbook, onCheckInComplete, on
           <NextWeekSuggestions suggestions={suggestions} />
 
           {/* FOCUS GOAL REVIEW */}
-          {weeklyFocus.length > 0 && (
+          {focusGoals.length > 0 && (
             <section className="bg-white rounded-2xl border border-gray-200 p-4 sm:p-5">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
@@ -912,21 +1020,28 @@ export default function WeeklyCheckIn({ profile, playbook, onCheckInComplete, on
                   <h2 className="font-semibold text-gray-900">Focus Goal Review</h2>
                 </div>
                 <span className="text-sm text-gray-500">
-                  {completedGoals}/{weeklyFocus.length} done
+                  {focusGoals.filter(g => g.status === 'completed').length}/{focusGoals.length} done
                 </span>
               </div>
 
+              <p className="text-xs text-gray-500 mb-3">
+                Decide what to do with each goal for next week.
+              </p>
+
               <div className="space-y-3">
-                {weeklyFocus.map((item, idx) => (
-                  <FocusGoalReviewItem
-                    key={idx}
-                    item={item}
-                    progress={focusProgress[idx]?.progress}
-                    blockerText={focusBlockers[idx]}
-                    onBlockerChange={(text) => handleBlockerChange(idx, text)}
+                {focusGoals.map(goal => (
+                  <GoalReviewItem
+                    key={goal.id}
+                    goal={goal}
+                    decision={goalDecisions[goal.id] || 'drop'}
+                    onDecisionChange={(goalId, action) =>
+                      setGoalDecisions(prev => ({ ...prev, [goalId]: action }))
+                    }
                   />
                 ))}
               </div>
+
+              <NextWeekGoalPreview goals={focusGoals} decisions={goalDecisions} />
             </section>
           )}
 

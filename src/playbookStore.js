@@ -137,7 +137,6 @@ export function applyPlaybookSuggestion(suggestion) {
             removeIndex = findIndexByText(playbook.radar, content.text, 'suggestion');
           }
           if (removeIndex !== -1 && removeIndex !== undefined && playbook.radar[removeIndex]) {
-            console.log('Removing radar at index:', removeIndex, playbook.radar[removeIndex]);
             playbook.radar.splice(removeIndex, 1);
           }
         }
@@ -146,12 +145,7 @@ export function applyPlaybookSuggestion(suggestion) {
   }
 
   playbook.lastModified = new Date().toISOString();
-  console.log('Saving playbook with principles:', playbook.principles?.length);
   savePlaybook(playbook);
-
-  // Verify it was saved
-  const savedPlaybook = getPlaybook();
-  console.log('Verified saved playbook principles:', savedPlaybook?.principles?.length);
 
   return playbook;
 }

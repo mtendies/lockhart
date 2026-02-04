@@ -692,13 +692,10 @@ function AppContent() {
 
         {/* Dev Tools Modal */}
         {showDevTools && (
-          <>
-            {console.log('App.jsx: Rendering DevTools modal, showDevTools=', showDevTools)}
-            <DevTools
-              isModal={true}
-              onClose={() => setShowDevTools(false)}
-            />
-          </>
+          <DevTools
+            isModal={true}
+            onClose={() => setShowDevTools(false)}
+          />
         )}
 
         {/* Tutorial overlay */}

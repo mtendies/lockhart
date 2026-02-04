@@ -22,6 +22,9 @@ const SYNC_MAP = {
   'health-advisor-bookmarks': 'bookmarks_data',
   'health-advisor-nutrition-calibration': 'nutrition_data',
   'health-advisor-groceries': 'grocery_data',
+  'health-advisor-focus-goals': 'goals_data',
+  'health-advisor-goal-history': 'goal_history_data',
+  'health-advisor-swaps': 'swaps_data',
 };
 
 // Reverse mapping: column → localStorage key
@@ -329,6 +332,27 @@ export function syncGrocery() {
   return syncToSupabaseDebounced('health-advisor-groceries');
 }
 
+/**
+ * Sync focus goals to Supabase
+ */
+export function syncGoals() {
+  return syncToSupabaseDebounced('health-advisor-focus-goals');
+}
+
+/**
+ * Sync goal history to Supabase
+ */
+export function syncGoalHistory() {
+  return syncToSupabaseDebounced('health-advisor-goal-history');
+}
+
+/**
+ * Sync swaps data to Supabase
+ */
+export function syncSwaps() {
+  return syncToSupabaseDebounced('health-advisor-swaps');
+}
+
 // ============================================
 // HOOK FOR REACT COMPONENTS
 // ============================================
@@ -355,6 +379,9 @@ export function createSyncHook() {
     syncNutrition,
     syncNutritionImmediate,
     syncGrocery,
+    syncGoals,
+    syncGoalHistory,
+    syncSwaps,
   };
 }
 
@@ -374,5 +401,8 @@ export default {
   syncNutrition,
   syncNutritionImmediate,
   syncGrocery,
+  syncGoals,
+  syncGoalHistory,
+  syncSwaps,
   SYNC_MAP,
 };

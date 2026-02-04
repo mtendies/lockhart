@@ -29,6 +29,8 @@ export const PROFILE_STORAGE_KEYS = [
   'health-advisor-tracking',
   'health-advisor-custom-targets',
   'health-advisor-weekly-wins',
+  'health-advisor-focus-goals',
+  'health-advisor-goal-history',
   'health-advisor-draft',
   'health-advisor-learned-insights',
   'health-advisor-workouts',

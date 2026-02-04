@@ -38,7 +38,14 @@ export function getItem(baseKey) {
  */
 export function setItem(baseKey, value) {
   const key = getStorageKey(baseKey);
-  localStorage.setItem(key, value);
+  try {
+    localStorage.setItem(key, value);
+  } catch (e) {
+    if (e?.name === 'QuotaExceededError' || e?.code === 22) {
+      console.error(`Storage quota exceeded for ${baseKey}. Data not saved.`);
+    }
+    throw e;
+  }
 }
 
 /**

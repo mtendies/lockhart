@@ -45,6 +45,7 @@ import {
   Salad,
   TrendingUp,
   Lightbulb,
+  AlertTriangle,
 } from 'lucide-react';
 import { estimateCalories, needsClarification, SOURCE_URLS } from '../calorieEstimator';
 import { getPendingAdditionFor, approveAddition, removeAddition } from '../advisorAdditionsStore';
@@ -121,6 +122,10 @@ function getTodaysCaloriesFromMeals(dayData) {
 
   return dayData.meals.reduce((total, meal) => {
     if (meal.content && meal.content.trim()) {
+      // Use user-adjusted override if available, otherwise re-parse
+      if (typeof meal.calorieOverride === 'number') {
+        return total + meal.calorieOverride;
+      }
       const estimate = estimateCalories(meal.content);
       return total + estimate.totalCalories;
     }
@@ -707,8 +712,10 @@ function convertBetweenUnits(qty, from, to) {
   return qty; // no conversion available, keep quantity
 }
 
-function CalorieEstimatorPopup({ content, onClose }) {
+function CalorieEstimatorPopup({ content, dayKey, mealId, onClose, onSaveCalories }) {
   const [selectedItem, setSelectedItem] = useState(null);
+  const [confidenceTooltipIdx, setConfidenceTooltipIdx] = useState(null);
+  const qtyInputRefs = useRef([]);
   const initialEstimate = estimateCalories(content);
 
   // Editable items state - each item gets its own quantity/unit
@@ -723,6 +730,16 @@ function CalorieEstimatorPopup({ content, onClose }) {
 
   // Recalculate totals from editable items
   const totalCalories = editableItems.reduce((sum, item) => sum + Math.round(item.calPerUnit * item.editQty), 0);
+
+  // Save calorie override when closing if user adjusted quantities
+  function handleClose() {
+    const originalTotal = initialEstimate.totalCalories;
+    if (totalCalories !== originalTotal && dayKey && mealId) {
+      updateMealById(dayKey, mealId, { calorieOverride: totalCalories });
+      onSaveCalories?.();
+    }
+    onClose();
+  }
 
   function handleQtyChange(idx, newQty) {
     setEditableItems(prev => prev.map((item, i) =>
@@ -746,7 +763,7 @@ function CalorieEstimatorPopup({ content, onClose }) {
   const confidence = confidenceLabels[initialEstimate.confidence] || confidenceLabels.low;
 
   return (
-    <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center" onClick={handleClose}>
       <div
         className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full sm:max-w-md max-h-[85vh] overflow-hidden animate-slide-up sm:animate-scale-in select-text"
         onClick={(e) => e.stopPropagation()}
@@ -766,7 +783,7 @@ function CalorieEstimatorPopup({ content, onClose }) {
                 </span>
               </div>
             </div>
-            <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg -mr-1">
+            <button onClick={handleClose} className="p-2 hover:bg-gray-100 rounded-lg -mr-1">
               <X size={20} className="text-gray-500" />
             </button>
           </div>
@@ -790,18 +807,52 @@ function CalorieEstimatorPopup({ content, onClose }) {
               {editableItems.map((item, idx) => {
                 const itemCal = Math.round(item.calPerUnit * item.editQty);
                 const unitOptions = getUnitOptionsForItem(item);
+                const showConfidenceIcon = item.itemConfidence === 'medium' || item.itemConfidence === 'low';
+                const confidenceColor = item.itemConfidence === 'low' ? 'text-orange-500' : 'text-amber-500';
 
                 return (
                   <div key={idx} className="bg-gray-50 rounded-xl p-3 space-y-2">
-                    {/* Food name */}
+                    {/* Food name with confidence indicator */}
                     <div className="flex items-start justify-between gap-2">
-                      <span className="text-sm font-medium text-gray-900">{item.food}</span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-sm font-medium text-gray-900">{item.food}</span>
+                        {showConfidenceIcon && (
+                          <button
+                            onClick={() => {
+                              if (confidenceTooltipIdx === idx) {
+                                setConfidenceTooltipIdx(null);
+                              } else {
+                                setConfidenceTooltipIdx(idx);
+                              }
+                            }}
+                            className="flex-shrink-0"
+                          >
+                            <AlertTriangle size={14} className={confidenceColor} />
+                          </button>
+                        )}
+                      </div>
                       <span className="text-sm font-bold text-orange-600 whitespace-nowrap">{itemCal} cal</span>
                     </div>
+
+                    {/* Confidence tooltip */}
+                    {confidenceTooltipIdx === idx && item.confidenceNote && (
+                      <button
+                        onClick={() => {
+                          setConfidenceTooltipIdx(null);
+                          qtyInputRefs.current[idx]?.focus();
+                        }}
+                        className={`text-xs px-2 py-1 rounded-md w-full text-left ${
+                          item.itemConfidence === 'low' ? 'bg-orange-50 text-orange-700' : 'bg-amber-50 text-amber-700'
+                        }`}
+                      >
+                        {item.confidenceNote} — tap to adjust
+                      </button>
+                    )}
 
                     {/* Editable quantity and unit */}
                     <div className="flex items-center gap-1.5 text-xs">
                       <input
+                        ref={el => qtyInputRefs.current[idx] = el}
                         type="number"
                         value={item.editQty}
                         onChange={(e) => handleQtyChange(idx, parseFloat(e.target.value) || 0)}
@@ -1252,7 +1303,7 @@ function ExpandingTextarea({ value, onChange, placeholder, disabled, onSave }) {
 /**
  * Sortable meal entry item
  */
-function SortableMealEntry({ meal, day, onContentChange, onRemove, onAdvisorAction, disabled, showRemove }) {
+function SortableMealEntry({ meal, day, onContentChange, onRemove, onAdvisorAction, onSaveCalories, disabled, showRemove }) {
   const {
     attributes,
     listeners,
@@ -1384,7 +1435,7 @@ function SortableMealEntry({ meal, day, onContentChange, onRemove, onAdvisorActi
 
         {/* Calorie & Clarification icons (only show when there's content) */}
         {meal.content && meal.content.trim() && (
-          <MealEntryActions content={meal.content} mealId={meal.id} />
+          <MealEntryActions content={meal.content} mealId={meal.id} dayKey={day} onSaveCalories={onSaveCalories} />
         )}
       </div>
     </div>
@@ -1394,7 +1445,7 @@ function SortableMealEntry({ meal, day, onContentChange, onRemove, onAdvisorActi
 /**
  * Actions for a meal entry (calorie estimator, clarifying questions)
  */
-function MealEntryActions({ content, mealId }) {
+function MealEntryActions({ content, mealId, dayKey, onSaveCalories }) {
   const [showCalories, setShowCalories] = useState(false);
   const [showClarify, setShowClarify] = useState(false);
   const [dismissedItems, setDismissedItems] = useState(() => {
@@ -1451,7 +1502,10 @@ function MealEntryActions({ content, mealId }) {
       {showCalories && (
         <CalorieEstimatorPopup
           content={content}
+          dayKey={dayKey}
+          mealId={mealId}
           onClose={() => setShowCalories(false)}
+          onSaveCalories={onSaveCalories}
         />
       )}
 
@@ -1460,7 +1514,6 @@ function MealEntryActions({ content, mealId }) {
           clarification={clarification}
           onAnswer={(option) => {
             // Could update the estimate with the multiplier here
-            console.log('Selected option:', option);
           }}
           onDismiss={handleDismissClarification}
           onClose={() => setShowClarify(false)}
@@ -2033,6 +2086,7 @@ function DayEntry({
                   onContentChange={(mealId, content) => onMealChange(day, mealId, content)}
                   onRemove={(mealId) => onRemoveMeal(day, mealId)}
                   onAdvisorAction={(action, addition) => onDataChange?.()}
+                  onSaveCalories={() => onDataChange?.()}
                   disabled={false}
                   showRemove={meals.length > 1}
                 />
@@ -2288,7 +2342,7 @@ export default function NutritionCalibration({ onComplete, compact = false, prof
   }
 
   function handleMealChange(day, mealId, content) {
-    updateMealById(day, mealId, { content });
+    updateMealById(day, mealId, { content, calorieOverride: null });
     setCalibrationData(getCalibrationData());
   }
 

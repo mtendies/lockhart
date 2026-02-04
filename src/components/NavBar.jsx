@@ -90,7 +90,7 @@ export default function NavBar({ currentView, onNavigate, pendingSuggestionCount
                       <div className="absolute -top-1 -right-1 w-2 h-2 bg-amber-400 rounded-full border-2 border-white" />
                     )}
                   </div>
-                  <span className={`text-[9px] ${active ? 'font-semibold' : 'font-medium'}`}>
+                  <span className={`text-[11px] ${active ? 'font-semibold' : 'font-medium'}`}>
                     {item.label}
                   </span>
                 </button>

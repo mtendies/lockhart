@@ -5,6 +5,7 @@
  */
 
 import { getItem, setItem } from './storageHelper';
+import { syncToSupabaseDebounced } from './lib/simpleSync';
 
 const STORAGE_KEY = 'health-advisor-swaps';
 
@@ -69,6 +70,7 @@ export function getSwapData() {
  */
 export function saveSwapData(data) {
   setItem(STORAGE_KEY, JSON.stringify(data));
+  syncToSupabaseDebounced(STORAGE_KEY);
 }
 
 /**

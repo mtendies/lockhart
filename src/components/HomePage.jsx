@@ -36,10 +36,11 @@ import {
   RefreshCw,
   Cloud,
   CloudOff,
+  AlertTriangle,
 } from 'lucide-react';
 import { estimateCalories, SOURCE_URLS } from '../calorieEstimator';
 import { getPlaybook } from '../playbookStore';
-import { logActivity, deleteActivity, ACTIVITY_TYPES, ACTIVITY_SOURCES, WORKOUT_TYPES } from '../activityLogStore';
+import { logActivity, ACTIVITY_TYPES, ACTIVITY_SOURCES, WORKOUT_TYPES } from '../activityLogStore';
 import DeleteConfirmationModal from './DeleteConfirmationModal';
 
 /**
@@ -170,15 +171,6 @@ function calculateDailyCalorieBudget(profile) {
   const hasLoseFat = goals.includes('fat_loss') || goals.includes('lose_fat') || goals.includes('loseFat') || goals.includes('weightLoss') || goals.includes('weight_loss');
   const hasBuildMuscle = goals.includes('build_muscle') || goals.includes('buildMuscle') || goals.includes('muscle_gain') || goals.includes('muscleGain');
 
-  // DEBUG: Log calculation details
-  console.log('Calorie Budget Debug:', {
-    age, sex, weightKg, heightCm, bmr,
-    activityLevel, neatMultiplier, baseTdee,
-    exercises: exercises.map(e => `${e.name}: ${e.frequency}/wk`),
-    trainingIntensity, weeklyExerciseCalories, dailyExerciseCalories,
-    totalTdee, goals, hasLoseFat, hasBuildMuscle,
-  });
-
   // Fat loss takes priority over muscle gain
   if (hasLoseFat) return Math.round(totalTdee - 500);
   if (hasBuildMuscle) return Math.round(totalTdee + 300);
@@ -192,6 +184,10 @@ function getTodaysCaloriesFromMeals(meals) {
   if (!meals || !Array.isArray(meals)) return 0;
   return meals.reduce((total, meal) => {
     if (meal.content && meal.content.trim()) {
+      // Use user-adjusted override if available, otherwise re-parse
+      if (typeof meal.calorieOverride === 'number') {
+        return total + meal.calorieOverride;
+      }
       const estimate = estimateCalories(meal.content);
       return total + estimate.totalCalories;
     }
@@ -199,6 +195,18 @@ function getTodaysCaloriesFromMeals(meals) {
   }, 0);
 }
 import { getWeeklyFocusProgress, generateWeeklyWins, setCustomTarget } from '../weeklyProgressStore';
+import {
+  getGoalsWithProgress,
+  addGoal,
+  updateGoal,
+  removeGoal,
+  incrementGoal,
+  canAddGoal,
+  getLastWeekSummary,
+  getGoalHistory,
+  getGoalStreaks,
+  getCurrentWeekOf,
+} from '../focusGoalStore';
 import {
   isInCalibrationPeriod,
   isCalibrationComplete,
@@ -823,7 +831,7 @@ function QuickEntryBox({ onSubmit, onNavigate, onActivityLogged }) {
 }
 
 // Draggable Meal Slot Component
-function DraggableMealSlot({ meal, dayKey, index, onUpdate, onDragStart, onDragOver, onDragEnd, onDelete, isDragging, canDelete }) {
+function DraggableMealSlot({ meal, dayKey, index, onUpdate, onSaveCalories, onDragStart, onDragOver, onDragEnd, onDelete, isDragging, canDelete }) {
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState(meal.content || '');
   const [showCalories, setShowCalories] = useState(false);
@@ -863,7 +871,8 @@ function DraggableMealSlot({ meal, dayKey, index, onUpdate, onDragStart, onDragO
 
   const hasMeal = meal.content?.trim();
   const calorieEstimate = hasMeal ? estimateCalories(meal.content) : null;
-  const hasCalories = calorieEstimate && calorieEstimate.totalCalories > 0;
+  const displayCalories = typeof meal.calorieOverride === 'number' ? meal.calorieOverride : calorieEstimate?.totalCalories;
+  const hasCalories = calorieEstimate && displayCalories > 0;
 
   if (isEditing) {
     return (
@@ -955,7 +964,7 @@ function DraggableMealSlot({ meal, dayKey, index, onUpdate, onDragStart, onDragO
               setShowCalories(true);
             }}
             className="p-1 text-orange-500 hover:bg-orange-50 rounded transition-colors"
-            title={`~${calorieEstimate.totalCalories} cal`}
+            title={`~${displayCalories} cal`}
           >
             <Flame size={12} />
           </button>
@@ -992,7 +1001,10 @@ function DraggableMealSlot({ meal, dayKey, index, onUpdate, onDragStart, onDragO
       {showCalories && calorieEstimate && (
         <CaloriePopup
           estimate={calorieEstimate}
+          dayKey={dayKey}
+          mealId={meal.id}
           onClose={() => setShowCalories(false)}
+          onSaveCalories={onSaveCalories}
         />
       )}
     </div>
@@ -1117,8 +1129,10 @@ function convertBetweenUnits(qty, from, to) {
 }
 
 // Calorie Popup Component - Shows calorie breakdown with editable servings
-function CaloriePopup({ estimate, onClose }) {
+function CaloriePopup({ estimate, dayKey, mealId, onClose, onSaveCalories }) {
   const [selectedItem, setSelectedItem] = useState(null);
+  const [confidenceTooltipIdx, setConfidenceTooltipIdx] = useState(null);
+  const qtyInputRefs = useRef([]);
 
   // Editable items state - each item gets its own quantity/unit
   const [editableItems, setEditableItems] = useState(() =>
@@ -1131,6 +1145,16 @@ function CaloriePopup({ estimate, onClose }) {
   );
 
   const totalCalories = editableItems.reduce((sum, item) => sum + Math.round(item.calPerUnit * item.editQty), 0);
+
+  // Save calorie override when closing if user adjusted quantities
+  function handleClose() {
+    const originalTotal = estimate.totalCalories;
+    if (totalCalories !== originalTotal && dayKey && mealId) {
+      updateMealById(dayKey, mealId, { calorieOverride: totalCalories });
+      onSaveCalories?.();
+    }
+    onClose();
+  }
 
   function handleQtyChange(idx, newQty) {
     setEditableItems(prev => prev.map((item, i) =>
@@ -1156,7 +1180,7 @@ function CaloriePopup({ estimate, onClose }) {
   const confidence = confidenceLabels[estimate.confidence] || confidenceLabels.low;
 
   return (
-    <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center" onClick={handleClose}>
       <div
         className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full sm:max-w-md max-h-[85vh] overflow-hidden animate-slide-up sm:animate-scale-in select-text"
         onClick={(e) => e.stopPropagation()}
@@ -1176,7 +1200,7 @@ function CaloriePopup({ estimate, onClose }) {
                 </span>
               </div>
             </div>
-            <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg -mr-1">
+            <button onClick={handleClose} className="p-2 hover:bg-gray-100 rounded-lg -mr-1">
               <X size={20} className="text-gray-500" />
             </button>
           </div>
@@ -1200,18 +1224,52 @@ function CaloriePopup({ estimate, onClose }) {
               {editableItems.map((item, idx) => {
                 const itemCal = Math.round(item.calPerUnit * item.editQty);
                 const unitOptions = getUnitOptionsForItem(item);
+                const showConfidenceIcon = item.itemConfidence === 'medium' || item.itemConfidence === 'low';
+                const confidenceColor = item.itemConfidence === 'low' ? 'text-orange-500' : 'text-amber-500';
 
                 return (
                   <div key={idx} className="bg-gray-50 rounded-xl p-3 space-y-2">
-                    {/* Food name */}
+                    {/* Food name with confidence indicator */}
                     <div className="flex items-start justify-between gap-2">
-                      <span className="text-sm font-medium text-gray-900">{item.food}</span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-sm font-medium text-gray-900">{item.food}</span>
+                        {showConfidenceIcon && (
+                          <button
+                            onClick={() => {
+                              if (confidenceTooltipIdx === idx) {
+                                setConfidenceTooltipIdx(null);
+                              } else {
+                                setConfidenceTooltipIdx(idx);
+                              }
+                            }}
+                            className="flex-shrink-0"
+                          >
+                            <AlertTriangle size={14} className={confidenceColor} />
+                          </button>
+                        )}
+                      </div>
                       <span className="text-sm font-bold text-orange-600 whitespace-nowrap">{itemCal} cal</span>
                     </div>
+
+                    {/* Confidence tooltip */}
+                    {confidenceTooltipIdx === idx && item.confidenceNote && (
+                      <button
+                        onClick={() => {
+                          setConfidenceTooltipIdx(null);
+                          qtyInputRefs.current[idx]?.focus();
+                        }}
+                        className={`text-xs px-2 py-1 rounded-md w-full text-left ${
+                          item.itemConfidence === 'low' ? 'bg-orange-50 text-orange-700' : 'bg-amber-50 text-amber-700'
+                        }`}
+                      >
+                        {item.confidenceNote} — tap to adjust
+                      </button>
+                    )}
 
                     {/* Editable quantity and unit */}
                     <div className="flex items-center gap-1.5 text-xs">
                       <input
+                        ref={el => qtyInputRefs.current[idx] = el}
                         type="number"
                         value={item.editQty}
                         onChange={(e) => handleQtyChange(idx, parseFloat(e.target.value) || 0)}
@@ -1559,7 +1617,7 @@ function NutritionCalibrationCard() {
   }, [editingDay]);
 
   function handleMealUpdate(dayKey, mealId, content) {
-    updateMealById(dayKey, mealId, { content });
+    updateMealById(dayKey, mealId, { content, calorieOverride: null });
     setCalibrationData(getCalibrationData());
   }
 
@@ -1754,6 +1812,7 @@ function NutritionCalibrationCard() {
                 dayKey={activeDay}
                 index={index}
                 onUpdate={handleMealUpdate}
+                onSaveCalories={() => setCalibrationData(getCalibrationData())}
                 onDragStart={handleDragStart}
                 onDragOver={handleDragOver}
                 onDragEnd={handleDragEnd}
@@ -1941,114 +2000,178 @@ function NutritionCalibrationCard() {
 }
 
 // Simple Focus Goal Card for Home (with edit target and view entries)
-function SimpleFocusGoalCard({ item, onEditTarget, onViewEntries }) {
-  const Icon = item.progress?.trackable ? getFocusIcon(item.progress.type) : Target;
-  const isComplete = item.progress?.complete;
-  const hasProgress = item.progress?.current > 0;
-  const progressPercent = item.progress?.trackable
-    ? Math.round((item.progress.current / item.progress.target) * 100)
-    : 0;
+// ============================================
+// NEW FOCUS GOALS SYSTEM
+// ============================================
 
-  // Green-only color scheme
+// Add Goal Form
+function AddGoalForm({ onAdd, onCancel }) {
+  const [text, setText] = useState('');
+  const [target, setTarget] = useState(3);
+  const [unit, setUnit] = useState('times');
+  const [type, setType] = useState('recurring');
+
+  function handleSubmit(e) {
+    e.preventDefault();
+    if (!text.trim()) return;
+    const result = onAdd({ text, target, unit, type });
+    if (result?.success) {
+      setText('');
+      onCancel();
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="bg-gray-50 rounded-xl p-3 space-y-3 border border-gray-200">
+      <input
+        type="text"
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        placeholder="e.g., Run 3 times this week"
+        className="w-full px-3 py-2 text-sm bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-400"
+        autoFocus
+      />
+      <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1">
+          <button type="button" onClick={() => setTarget(Math.max(1, target - 1))}
+            className="w-7 h-7 rounded bg-gray-200 text-gray-700 hover:bg-gray-300 flex items-center justify-center text-sm font-semibold">-</button>
+          <span className="text-sm font-bold w-6 text-center">{target}</span>
+          <button type="button" onClick={() => setTarget(Math.min(14, target + 1))}
+            className="w-7 h-7 rounded bg-gray-200 text-gray-700 hover:bg-gray-300 flex items-center justify-center text-sm font-semibold">+</button>
+        </div>
+        <select value={unit} onChange={(e) => setUnit(e.target.value)}
+          className="px-2 py-1 text-xs border border-gray-200 rounded-lg bg-white">
+          <option value="times">times</option>
+          <option value="days">days</option>
+          <option value="lbs">lbs</option>
+        </select>
+        <select value={type} onChange={(e) => setType(e.target.value)}
+          className="px-2 py-1 text-xs border border-gray-200 rounded-lg bg-white">
+          <option value="recurring">Recurring</option>
+          <option value="one-time">One-time</option>
+        </select>
+        <div className="flex-1" />
+        <button type="button" onClick={onCancel}
+          className="px-3 py-1.5 text-xs text-gray-500 hover:bg-gray-100 rounded-lg">Cancel</button>
+        <button type="submit" disabled={!text.trim()}
+          className="px-3 py-1.5 text-xs bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50">Add</button>
+      </div>
+    </form>
+  );
+}
+
+// Single Goal Card for new system
+function GoalCard({ goal, onIncrement, onEdit, onRemove }) {
+  const isComplete = goal.status === 'completed';
+  const isCarried = !!goal.carriedFrom;
+  const progressPercent = goal.target > 0 ? Math.min(100, Math.round((goal.current / goal.target) * 100)) : 0;
+
   let bgColor = 'bg-white';
-  let progressBarColor = 'bg-gray-200';
   let progressFillColor = 'bg-green-500';
 
   if (isComplete) {
     bgColor = 'bg-green-50';
     progressFillColor = 'bg-green-500';
-  } else if (hasProgress) {
-    bgColor = 'bg-white';
+  } else if (isCarried) {
+    bgColor = 'bg-amber-50';
+    progressFillColor = 'bg-amber-500';
+  } else if (goal.current > 0) {
     progressFillColor = 'bg-green-500';
   } else {
-    bgColor = 'bg-white';
-    progressBarColor = 'bg-gray-200';
     progressFillColor = 'bg-gray-300';
   }
-
-  const hasEntries = item.progress?.contributingActivities?.length > 0;
-  const isTrackable = item.progress?.trackable;
 
   return (
     <div className={`rounded-xl ${bgColor} border border-gray-200 p-3`}>
       <div className="flex items-start gap-3">
-        {/* Checkbox/Status */}
+        {/* Status icon */}
         <div className="mt-0.5 flex-shrink-0">
           {isComplete ? (
             <div className="w-5 h-5 rounded-full bg-green-500 flex items-center justify-center">
               <Check size={12} className="text-white" />
+            </div>
+          ) : isCarried ? (
+            <div className="w-5 h-5 rounded-full bg-amber-400 flex items-center justify-center">
+              <RefreshCw size={10} className="text-white" />
             </div>
           ) : (
             <div className="w-5 h-5 rounded-full border-2 border-gray-300" />
           )}
         </div>
 
-        {/* Goal text and progress */}
+        {/* Goal content */}
         <div className="flex-1 min-w-0">
-          {/* Goal text */}
-          <p className={`text-sm leading-snug ${isComplete ? 'text-green-700' : 'text-gray-800'}`}>
-            {item.action}
-          </p>
-
-          {/* Progress bar and actions row */}
-          {isTrackable && (
-            <div className="mt-2 flex items-center gap-2">
-              {/* Progress bar */}
-              <div className={`flex-1 h-1.5 ${progressBarColor} rounded-full overflow-hidden`}>
-                <div
-                  className={`h-full ${progressFillColor} rounded-full transition-all duration-300`}
-                  style={{ width: `${progressPercent}%` }}
-                />
-              </div>
-
-              {/* Progress count */}
-              <span className={`text-xs font-semibold min-w-[32px] text-right ${
-                isComplete ? 'text-green-600' : 'text-gray-500'
-              }`}>
-                {item.progress.current}/{item.progress.target}
-              </span>
-
-              {/* Action buttons - always visible */}
-              <div className="flex items-center gap-0.5 ml-1">
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onEditTarget?.(item);
-                  }}
-                  className="p-1.5 text-gray-400 hover:text-green-600 active:text-green-700 hover:bg-green-50 active:bg-green-100 rounded-lg transition-colors"
-                  title="Edit target"
-                  aria-label="Edit target"
-                >
-                  <Edit3 size={14} />
-                </button>
-                {hasEntries && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onViewEntries?.(item);
-                    }}
-                    className="p-1.5 text-gray-400 hover:text-green-600 active:text-green-700 hover:bg-green-50 active:bg-green-100 rounded-lg transition-colors"
-                    title="View entries"
-                    aria-label="View entries"
-                  >
-                    <FolderOpen size={14} />
-                  </button>
-                )}
-              </div>
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <p className={`text-sm leading-snug ${isComplete ? 'text-green-700' : 'text-gray-800'}`}>
+                {goal.text}
+                {isComplete && goal.current >= goal.target && ' \ud83c\udf89'}
+              </p>
+              {isCarried && (
+                <p className="text-xs text-amber-600 mt-0.5">Carried from last week</p>
+              )}
+              {isComplete && goal.autoCompleted && !goal.confirmedComplete && (
+                <p className="text-xs text-green-600 mt-0.5">Auto-completed! Will confirm in Sunday check-in</p>
+              )}
             </div>
-          )}
+          </div>
+
+          {/* Progress bar row */}
+          <div className="mt-2 flex items-center gap-2">
+            <div className="flex-1 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+              <div
+                className={`h-full ${progressFillColor} rounded-full transition-all duration-500`}
+                style={{ width: `${progressPercent}%` }}
+              />
+            </div>
+
+            <span className={`text-xs font-semibold min-w-[32px] text-right ${
+              isComplete ? 'text-green-600' : 'text-gray-500'
+            }`}>
+              {goal.current}/{goal.target}
+            </span>
+
+            {/* Action buttons */}
+            <div className="flex items-center gap-0.5 ml-1">
+              {!isComplete && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); onIncrement?.(goal.id); }}
+                  className="px-1.5 py-0.5 text-xs font-semibold text-green-600 hover:bg-green-50 active:bg-green-100 rounded transition-colors border border-green-200"
+                  title="Log +1"
+                >
+                  +1
+                </button>
+              )}
+              <button
+                onClick={(e) => { e.stopPropagation(); onEdit?.(goal); }}
+                className="p-1.5 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors"
+                title="Edit goal"
+              >
+                <Edit3 size={14} />
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); onRemove?.(goal.id); }}
+                className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                title="Remove goal"
+              >
+                <Trash2 size={14} />
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
   );
 }
 
-// Edit Target Modal
-function EditTargetModal({ item, onSave, onClose }) {
-  const [target, setTarget] = useState(item.progress?.target || 1);
+// Edit Goal Modal
+function EditGoalModal({ goal, onSave, onClose }) {
+  const [text, setText] = useState(goal.text);
+  const [target, setTarget] = useState(goal.target);
+  const [type, setType] = useState(goal.type);
 
   function handleSave() {
-    setCustomTarget(item.index, target);
+    updateGoal(goal.id, { text, target, type });
     onSave();
     onClose();
   }
@@ -2056,181 +2179,246 @@ function EditTargetModal({ item, onSave, onClose }) {
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onClose}>
       <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-5" onClick={(e) => e.stopPropagation()}>
-        <h3 className="font-semibold text-gray-900 mb-3">Edit Weekly Target</h3>
-        <p className="text-sm text-gray-600 mb-4">{item.action}</p>
-
+        <h3 className="font-semibold text-gray-900 mb-3">Edit Goal</h3>
+        <input
+          type="text"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          className="w-full px-3 py-2 text-sm bg-gray-50 border border-gray-200 rounded-lg mb-3 focus:outline-none focus:ring-2 focus:ring-green-400"
+        />
         <div className="flex items-center gap-4 mb-4">
-          <button
-            onClick={() => setTarget(Math.max(1, target - 1))}
-            className="w-10 h-10 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 flex items-center justify-center text-xl font-semibold"
-          >
-            -
-          </button>
-          <span className="text-2xl font-bold text-gray-900 w-12 text-center">{target}</span>
-          <button
-            onClick={() => setTarget(Math.min(7, target + 1))}
-            className="w-10 h-10 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 flex items-center justify-center text-xl font-semibold"
-          >
-            +
-          </button>
-          <span className="text-gray-500">times/week</span>
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-gray-600">Target:</span>
+            <button onClick={() => setTarget(Math.max(1, target - 1))}
+              className="w-8 h-8 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 flex items-center justify-center text-lg font-semibold">-</button>
+            <span className="text-xl font-bold text-gray-900 w-8 text-center">{target}</span>
+            <button onClick={() => setTarget(Math.min(14, target + 1))}
+              className="w-8 h-8 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 flex items-center justify-center text-lg font-semibold">+</button>
+          </div>
+          <select value={type} onChange={(e) => setType(e.target.value)}
+            className="px-2 py-1.5 text-sm border border-gray-200 rounded-lg bg-white">
+            <option value="recurring">Recurring</option>
+            <option value="one-time">One-time</option>
+          </select>
         </div>
-
         <div className="flex gap-2">
-          <button onClick={onClose} className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50">
-            Cancel
-          </button>
-          <button onClick={handleSave} className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">
-            Save
-          </button>
+          <button onClick={onClose} className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50">Cancel</button>
+          <button onClick={handleSave} className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">Save</button>
         </div>
       </div>
     </div>
   );
 }
 
-// View Entries Modal with Delete functionality
-function ViewEntriesModal({ item, onClose, onEntryDeleted }) {
-  const [entries, setEntries] = useState(item.progress?.contributingActivities || []);
-  const [deleteTarget, setDeleteTarget] = useState(null);
-
-  function handleDelete(entry) {
-    setDeleteTarget(entry);
-  }
-
-  function confirmDelete() {
-    if (deleteTarget) {
-      // Delete from activity log
-      deleteActivity(deleteTarget.id);
-      // Update local state
-      setEntries(entries.filter(e => e.id !== deleteTarget.id));
-      setDeleteTarget(null);
-      // Notify parent to refresh
-      onEntryDeleted?.();
-    }
-  }
+// Goal History Modal
+function GoalHistoryModal({ onClose }) {
+  const history = getGoalHistory();
+  const currentGoals = getGoalsWithProgress();
+  const streaks = getGoalStreaks();
+  const currentWeek = getCurrentWeekOf();
 
   return (
-    <>
-      <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onClose}>
-        <div className="bg-white rounded-2xl shadow-xl max-w-md w-full max-h-[80vh] overflow-hidden" onClick={(e) => e.stopPropagation()}>
-          <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
-            <h3 className="font-semibold text-gray-900">Contributing Entries</h3>
-            <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg">
-              <X size={18} className="text-gray-500" />
-            </button>
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center" onClick={onClose}>
+      <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full sm:max-w-md max-h-[85vh] overflow-hidden"
+        onClick={(e) => e.stopPropagation()}>
+        <div className="sticky top-0 bg-white border-b border-gray-100 px-4 py-3 flex items-center justify-between z-10">
+          <div className="flex items-center gap-2">
+            <Trophy size={18} className="text-amber-500" />
+            <h3 className="font-semibold text-gray-900">Goal History</h3>
           </div>
-          <div className="p-4 max-h-[60vh] overflow-y-auto">
-            <p className="text-sm text-gray-600 mb-3">{item.action}</p>
-            {entries.length > 0 ? (
-              <div className="space-y-2">
-                {entries.map((entry, idx) => (
-                  <div key={entry.id || idx} className="p-3 bg-gray-50 rounded-lg flex items-start justify-between gap-2">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-gray-800">{entry.summary || entry.rawText}</p>
-                      <p className="text-xs text-gray-400 mt-1">
-                        {new Date(entry.timestamp).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => handleDelete(entry)}
-                      className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors flex-shrink-0"
-                      title="Delete entry"
-                    >
-                      <Trash2 size={14} />
-                    </button>
+          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg">
+            <X size={20} className="text-gray-500" />
+          </button>
+        </div>
+
+        <div className="overflow-y-auto max-h-[calc(85vh-60px)] px-4 py-4 space-y-5">
+          {/* Streaks */}
+          {streaks.length > 0 && (
+            <div className="bg-amber-50 rounded-xl p-3">
+              <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide mb-2">Streaks</p>
+              {streaks.map((s, i) => (
+                <p key={i} className="text-sm text-amber-800">
+                  \ud83d\udd25 {s.text}: {s.weeks} weeks running
+                </p>
+              ))}
+            </div>
+          )}
+
+          {/* Current week */}
+          {currentGoals.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                Week of {new Date(currentWeek + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} (current)
+              </p>
+              {currentGoals.map(g => (
+                <div key={g.id} className="flex items-center justify-between py-1.5">
+                  <div className="flex items-center gap-2">
+                    <span>{g.status === 'completed' ? '\u2705' : g.carriedFrom ? '\ud83d\udd04' : '\u25cb'}</span>
+                    <span className="text-sm text-gray-800">{g.text}</span>
                   </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-sm text-gray-400 text-center py-4">No entries yet this week</p>
-            )}
-          </div>
+                  <span className="text-xs text-gray-500">({g.current}/{g.target})</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Past weeks */}
+          {history.map((week, wi) => (
+            <div key={wi}>
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                Week of {new Date(week.weekOf + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+              </p>
+              {week.goals.map((g, gi) => (
+                <div key={gi} className="flex items-center justify-between py-1.5">
+                  <div className="flex items-center gap-2">
+                    <span>{g.status === 'completed' ? '\u2705' : '\u274c'}</span>
+                    <span className="text-sm text-gray-800">{g.text}</span>
+                  </div>
+                  <span className="text-xs text-gray-500">({g.current}/{g.target})</span>
+                </div>
+              ))}
+            </div>
+          ))}
+
+          {history.length === 0 && currentGoals.length === 0 && (
+            <p className="text-sm text-gray-400 text-center py-8">No goal history yet</p>
+          )}
         </div>
       </div>
-
-      {/* Delete Confirmation Modal */}
-      {deleteTarget && (
-        <DeleteConfirmationModal
-          title="Delete this entry?"
-          itemSummary={deleteTarget.summary || deleteTarget.rawText}
-          onConfirm={confirmDelete}
-          onCancel={() => setDeleteTarget(null)}
-        />
-      )}
-    </>
+    </div>
   );
 }
 
-// Focus Goals Section for Home - With edit and view actions
-function FocusGoalsCard({ onViewPlaybook }) {
-  const [focusProgress, setFocusProgress] = useState([]);
-  const [editingItem, setEditingItem] = useState(null);
-  const [viewingItem, setViewingItem] = useState(null);
+// Focus Goals Section for Home — NEW system
+function FocusGoalsCard() {
+  const [goals, setGoals] = useState([]);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [editingGoal, setEditingGoal] = useState(null);
+  const [showHistory, setShowHistory] = useState(false);
+  const [toast, setToast] = useState(null);
 
   useEffect(() => {
-    setFocusProgress(getWeeklyFocusProgress());
+    setGoals(getGoalsWithProgress());
   }, []);
 
   function handleRefresh() {
-    setFocusProgress(getWeeklyFocusProgress());
+    setGoals(getGoalsWithProgress());
   }
 
-  if (focusProgress.length === 0) return null;
+  function handleAddGoal(goalData) {
+    const result = addGoal(goalData);
+    if (!result.success) {
+      setToast(result.error);
+      setTimeout(() => setToast(null), 3000);
+      return result;
+    }
+    handleRefresh();
+    return result;
+  }
 
-  const completedCount = focusProgress.filter(f => f.progress?.complete).length;
+  function handleIncrement(goalId) {
+    const updatedGoal = incrementGoal(goalId);
+    handleRefresh();
+    if (updatedGoal?.autoCompleted) {
+      setToast(`\ud83c\udf89 Goal complete: ${updatedGoal.text}!`);
+      setTimeout(() => setToast(null), 4000);
+    }
+  }
+
+  function handleRemove(goalId) {
+    removeGoal(goalId);
+    handleRefresh();
+  }
+
+  const completedCount = goals.filter(g => g.status === 'completed').length;
+  const lastWeek = getLastWeekSummary();
+  const currentWeek = getCurrentWeekOf();
+  const weekLabel = new Date(currentWeek + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 
   return (
     <div className="bg-white rounded-2xl border border-gray-200 p-5">
+      {/* Toast notification */}
+      {toast && (
+        <div className="mb-3 px-3 py-2 bg-green-50 border border-green-200 rounded-xl text-sm text-green-800 animate-slide-up">
+          {toast}
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
           <Target size={18} className="text-green-600" />
-          <span className="font-semibold text-gray-900">Focus Goals</span>
+          <span className="font-semibold text-gray-900">This Week's Focus</span>
         </div>
-        <span className="text-sm text-gray-500">
-          {completedCount} of {focusProgress.length} done
-        </span>
+        <span className="text-xs text-gray-400">Week of {weekLabel}</span>
       </div>
 
-      {/* Goals list - with hover actions */}
-      <div className="space-y-2">
-        {focusProgress.map((item, idx) => (
-          <SimpleFocusGoalCard
-            key={idx}
-            item={item}
-            onEditTarget={() => setEditingItem(item)}
-            onViewEntries={() => setViewingItem(item)}
-          />
-        ))}
-      </div>
+      {/* Goals list */}
+      {goals.length > 0 ? (
+        <div className="space-y-2">
+          {goals.map(goal => (
+            <GoalCard
+              key={goal.id}
+              goal={goal}
+              onIncrement={handleIncrement}
+              onEdit={(g) => setEditingGoal(g)}
+              onRemove={handleRemove}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="text-center py-4">
+          <p className="text-sm text-gray-500">No goals set for this week</p>
+          <p className="text-xs text-gray-400 mt-1">Add up to 3 focus goals to stay on track</p>
+        </div>
+      )}
 
-      {/* View in Playbook link */}
-      <div className="mt-4 pt-3 border-t border-gray-100">
+      {/* Add Goal */}
+      {showAddForm ? (
+        <div className="mt-3">
+          <AddGoalForm onAdd={handleAddGoal} onCancel={() => setShowAddForm(false)} />
+        </div>
+      ) : canAddGoal() && (
         <button
-          onClick={onViewPlaybook}
-          className="text-sm text-green-600 hover:text-green-700 flex items-center gap-1"
+          onClick={() => setShowAddForm(true)}
+          className="mt-3 w-full flex items-center justify-center gap-1.5 py-2 text-sm text-green-600 hover:bg-green-50 border border-dashed border-green-300 rounded-xl transition-colors"
         >
-          View Full Focus Goals in Playbook <ChevronRight size={14} />
+          <Plus size={14} /> Add Goal
+        </button>
+      )}
+
+      {/* Last week summary + history link */}
+      <div className="mt-4 pt-3 border-t border-gray-100 flex items-center justify-between">
+        {lastWeek ? (
+          <span className="text-xs text-gray-500">
+            <Trophy size={12} className="inline text-amber-500 mr-1" />
+            Last week: {lastWeek.completed} of {lastWeek.total} goals completed
+          </span>
+        ) : (
+          <span className="text-xs text-gray-400">
+            {completedCount} of {goals.length} done this week
+          </span>
+        )}
+        <button
+          onClick={() => setShowHistory(true)}
+          className="text-xs text-green-600 hover:text-green-700"
+        >
+          View History
         </button>
       </div>
 
-      {/* Edit Target Modal */}
-      {editingItem && (
-        <EditTargetModal
-          item={editingItem}
+      {/* Edit Goal Modal */}
+      {editingGoal && (
+        <EditGoalModal
+          goal={editingGoal}
           onSave={handleRefresh}
-          onClose={() => setEditingItem(null)}
+          onClose={() => setEditingGoal(null)}
         />
       )}
 
-      {/* View Entries Modal */}
-      {viewingItem && (
-        <ViewEntriesModal
-          item={viewingItem}
-          onClose={() => setViewingItem(null)}
-          onEntryDeleted={handleRefresh}
-        />
+      {/* History Modal */}
+      {showHistory && (
+        <GoalHistoryModal onClose={() => setShowHistory(false)} />
       )}
     </div>
   );
@@ -2598,7 +2786,7 @@ function FullPlaybookModal({ isOpen, onClose }) {
   }
 
   function handleMealUpdate(dayKey, mealId, content) {
-    updateMealById(dayKey, mealId, { content });
+    updateMealById(dayKey, mealId, { content, calorieOverride: null });
     setCalibrationData(getCalibrationData());
   }
 
@@ -2762,6 +2950,7 @@ function FullPlaybookModal({ isOpen, onClose }) {
                               dayKey={day}
                               index={index}
                               onUpdate={handleMealUpdate}
+                              onSaveCalories={() => setCalibrationData(getCalibrationData())}
                               onDragStart={(e, idx) => handleDragStart(e, idx, day)}
                               onDragOver={(e, idx) => handleDragOver(e, idx, day)}
                               onDragEnd={() => handleDragEnd(day)}
@@ -3079,7 +3268,7 @@ export default function HomePage({ onNavigate, onOpenCheckIn, syncStatus, onRefr
 
         {/* 4. Focus Goals - Green, minimal, no buttons */}
         <section>
-          <FocusGoalsCard onViewPlaybook={() => setShowPlaybook(true)} />
+          <FocusGoalsCard />
         </section>
 
         {/* 5. Key Principles - Blue (collapsed) */}

@@ -14,18 +14,43 @@ export const SOURCE_URLS = {
   'Estimated': null,
 };
 
+// Description words to strip from segments before matching
+const DESCRIPTION_WORDS = new Set([
+  'big', 'large', 'small', 'medium', 'little', 'huge', 'hearty', 'loaded',
+  'light', 'simple', 'plain', 'classic', 'homemade', 'fresh', 'mixed',
+  'grilled', 'baked', 'fried', 'steamed', 'roasted',
+]);
+
+// Informal quantity words that indicate a guessed portion
+const INFORMAL_QUANTITY_WORDS = new Set([
+  'sprinkle', 'drizzle', 'dash', 'pinch', 'splash', 'dollop', 'handful', 'some',
+]);
+
+// Informal words that imply a specific unit (overrides database default unit)
+const INFORMAL_UNIT_MAP = {
+  'drizzle': 'tsp',     // ~1 tsp
+  'splash': 'tbsp',     // ~2 tbsp
+  'sprinkle': 'tbsp',   // ~1/2 tbsp
+  'dash': 'tsp',        // ~1/4 tsp
+  'dollop': 'tbsp',     // ~2 tbsp
+  'handful': 'cup',     // ~1/4 cup (0.25 quantity)
+};
+
 // Number words to digits
 const NUMBER_WORDS = {
   'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5,
   'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10,
   'half': 0.5, 'quarter': 0.25, 'a': 1, 'an': 1,
-  'a couple': 2, 'couple': 2, 'a few': 3, 'few': 3, 'several': 3,
+  'a couple': 2, 'couple': 2, 'a couple of': 2,
+  'a few': 3, 'few': 3, 'several': 3,
+  'dozen': 12, 'a dozen': 12, 'half dozen': 6, 'a half dozen': 6,
+  'third': 0.33, 'a third': 0.33,
   // Small/informal quantities
   'sprinkle': 0.5,    // ~1/2 tbsp or ~1/2 oz
-  'drizzle': 1,       // ~1 tbsp
+  'drizzle': 1,       // ~1 tsp
   'dash': 0.25,       // ~1/4 tsp
-  'pinch': 0.1,       // tiny amount
-  'splash': 1,        // ~1 tbsp liquid
+  'pinch': 0,         // negligible calories
+  'splash': 2,        // ~2 tbsp liquid
   'dollop': 2,        // ~2 tbsp
 };
 
@@ -252,6 +277,13 @@ const FOOD_DATABASE = {
   'salad': { cal: 150, unit: 'salad', serving: '1 side salad', source: 'Estimated', isComposite: true },
   'soup': { cal: 150, unit: 'cup', serving: '1 cup', source: 'USDA', isComposite: true },
   'bowl': { cal: 450, unit: 'bowl', serving: '1 bowl', source: 'Estimated', isComposite: true },
+  'wrap': { cal: 350, unit: 'wrap', serving: '1 wrap', source: 'Estimated', isComposite: true },
+  'plate': { cal: 500, unit: 'plate', serving: '1 plate', source: 'Estimated', isComposite: true },
+  'stir fry': { cal: 400, unit: 'serving', serving: '1 serving', source: 'Estimated', isComposite: true },
+  'stir-fry': { cal: 400, unit: 'serving', serving: '1 serving', source: 'Estimated', isComposite: true },
+  'parfait': { cal: 300, unit: 'parfait', serving: '1 parfait', source: 'Estimated', isComposite: true },
+  'omelette': { cal: 250, unit: 'omelette', serving: '1 omelette', source: 'Estimated', isComposite: true },
+  'omelet': { cal: 250, unit: 'omelet', serving: '1 omelet', source: 'Estimated', isComposite: true },
 };
 
 /**
@@ -273,6 +305,27 @@ function convertNumberWords(text) {
   result = result.replace(/\b3\/4\b/g, '0.75');
   result = result.replace(/\b1\/3\b/g, '0.33');
   result = result.replace(/\b2\/3\b/g, '0.67');
+
+  // Handle compound quantities: "N and a half" → N.5
+  result = result.replace(/(\d+\.?\d*)\s+and\s+(?:a\s+)?half/gi, (_, n) => {
+    return String(parseFloat(n) + 0.5);
+  });
+
+  // Handle "N and a quarter" → N.25
+  result = result.replace(/(\d+\.?\d*)\s+and\s+(?:a\s+)?quarter/gi, (_, n) => {
+    return String(parseFloat(n) + 0.25);
+  });
+
+  // Handle "N and a third" → N.33
+  result = result.replace(/(\d+\.?\d*)\s+and\s+(?:a\s+)?third/gi, (_, n) => {
+    return String(parseFloat(n) + 0.33);
+  });
+
+  // Handle "quarter of a/an" → 0.25
+  result = result.replace(/\bquarter\s+of\s+(?:a|an)\b/gi, '0.25');
+
+  // Handle "a third of a/an" → 0.33
+  result = result.replace(/\b0\.33\s+of\s+(?:a|an)\b/gi, '0.33');
 
   return result;
 }
@@ -341,8 +394,23 @@ function splitIntoSegments(text) {
 /**
  * Parse a single ingredient segment into quantity, unit, and food
  */
+function stripDescriptionWords(text) {
+  // Remove leading description words from segment
+  const words = text.split(/\s+/);
+  let startIdx = 0;
+  while (startIdx < words.length - 1 && DESCRIPTION_WORDS.has(words[startIdx].toLowerCase())) {
+    startIdx++;
+  }
+  return startIdx > 0 ? words.slice(startIdx).join(' ') : text;
+}
+
 function parseSegment(segment) {
   const text = convertNumberWords(segment.trim());
+
+  // Check if original segment had an informal quantity word
+  const lowerOriginal = segment.toLowerCase().trim();
+  const informalWord = [...INFORMAL_QUANTITY_WORDS].find(w => lowerOriginal.startsWith(w));
+  const hadInformalQuantity = !!informalWord;
 
   // Pattern: [quantity] [unit] (of) [food]
   // Examples: "2 tbsp of peanut butter", "1.5 cups almond milk", "1 banana", ".5 pounds beef"
@@ -359,11 +427,15 @@ function parseSegment(segment) {
     // Clean up parenthetical info like "(85/15)" from food name
     food = food.replace(/\s*\([^)]*\)\s*/g, ' ').trim();
 
-    return { quantity, unit, food, original: segment };
+    // Strip description words from food name
+    food = stripDescriptionWords(food);
+
+    return { quantity, unit, food, original: segment, hadExplicitQuantity: true, hadInformalQuantity, informalWord };
   }
 
-  // No quantity found - check if starts with food name
-  return { quantity: 1, unit: null, food: text.trim(), original: segment };
+  // No quantity found - strip description words and return
+  let food = stripDescriptionWords(text.trim());
+  return { quantity: 1, unit: null, food, original: segment, hadExplicitQuantity: false, hadInformalQuantity, informalWord };
 }
 
 /**
@@ -510,6 +582,19 @@ export function estimateCalories(text) {
       let unit = parsed.unit || foodData.unit;
       let quantity = parsed.quantity;
 
+      // If an informal quantity word was used and it implies a specific unit,
+      // use that unit and convert accordingly
+      if (parsed.informalWord && INFORMAL_UNIT_MAP[parsed.informalWord] && !parsed.unit) {
+        const impliedUnit = INFORMAL_UNIT_MAP[parsed.informalWord];
+        if (impliedUnit !== foodData.unit) {
+          const converted = convertUnits(quantity, impliedUnit, foodData.unit);
+          quantity = converted.quantity;
+          unit = converted.unit;
+        } else {
+          unit = impliedUnit;
+        }
+      }
+
       // Convert units if the parsed unit differs from the database unit
       if (parsed.unit && parsed.unit !== foodData.unit) {
         const converted = convertUnits(quantity, parsed.unit, foodData.unit);
@@ -525,6 +610,35 @@ export function estimateCalories(text) {
       const unitPlural = quantity !== 1 && !unit.endsWith('s') ? unit + 's' : unit;
       const calculation = `${quantity % 1 === 0 ? quantity : quantity.toFixed(1)} ${quantity === 1 ? unit : unitPlural} × ${baseCalPerUnit} cal/${unit}`;
 
+      // Determine per-item confidence
+      let itemConfidence = 'high';
+      let confidenceNote = null;
+
+      if (parsed.hadInformalQuantity) {
+        itemConfidence = 'medium';
+        // Generate note based on the informal word
+        if (parsed.informalWord === 'handful') {
+          confidenceNote = 'Estimated as ~1/4 cup';
+        } else if (parsed.informalWord === 'drizzle') {
+          confidenceNote = 'Estimated as ~1 tsp';
+        } else if (parsed.informalWord === 'splash') {
+          confidenceNote = 'Estimated as ~2 tbsp';
+        } else if (parsed.informalWord === 'sprinkle') {
+          confidenceNote = 'Estimated as ~1/2 tbsp';
+        } else if (parsed.informalWord === 'pinch') {
+          confidenceNote = 'Negligible calories';
+        } else if (parsed.informalWord === 'dollop') {
+          confidenceNote = 'Estimated as ~2 tbsp';
+        } else if (parsed.informalWord === 'dash') {
+          confidenceNote = 'Estimated as ~1/4 tsp';
+        } else if (parsed.informalWord === 'some') {
+          confidenceNote = 'Assumed 1 serving';
+        }
+      } else if (!parsed.hadExplicitQuantity) {
+        itemConfidence = 'medium';
+        confidenceNote = `Assumed 1 ${unit}`;
+      }
+
       parsedItems.push({
         food: foodName.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
         calories,
@@ -534,6 +648,8 @@ export function estimateCalories(text) {
         source: foodData.source,
         sourceUrl: SOURCE_URLS[foodData.source] || null,
         baseServing: foodData.serving,
+        itemConfidence,
+        confidenceNote,
       });
 
       // Add tips for calorie-dense items
