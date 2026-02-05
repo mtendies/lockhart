@@ -459,7 +459,11 @@ function CompletedDaysDropdown({ progress, calibrationData, onEditDay }) {
 
     if (dayData?.completed) return { icon: '✓', color: 'text-green-600 bg-green-100' };
     if (isToday) return { icon: '●', color: 'text-blue-600 bg-blue-100' };
-    if (isDayInPast(day)) return { icon: '○', color: 'text-amber-600 bg-amber-100' };
+    if (isDayInPast(day)) {
+      const hasMeals = dayData?.meals?.some(m => m.content?.trim());
+      if (hasMeals) return { icon: '!', color: 'text-orange-600 bg-orange-100' }; // incomplete
+      return { icon: '○', color: 'text-gray-400 bg-gray-100' }; // no data
+    }
     return { icon: '○', color: 'text-gray-400 bg-gray-100' };
   };
 
@@ -479,7 +483,7 @@ function CompletedDaysDropdown({ progress, calibrationData, onEditDay }) {
         <div className="flex items-center gap-2">
           <span className="text-lg">{encouragement.icon}</span>
           <span className="text-sm font-medium text-amber-800">
-            Day {Math.min(progress.completed + 1, 5)} of 5
+            Day {progress.calendarDay || Math.min(progress.completed + 1, 5)} of 5
             {progress.completed > 0 && progress.remaining > 0 && " - Keep it up!"}
             {progress.completed === 5 && " - All done!"}
           </span>
@@ -520,6 +524,13 @@ function CompletedDaysDropdown({ progress, calibrationData, onEditDay }) {
                         `Complete${calories > 0 ? ` (${calories.toLocaleString()} cal)` : ''}`
                       ) : isToday ? (
                         `In Progress${calories > 0 ? ` (${calories.toLocaleString()} cal)` : ''}`
+                      ) : isDayInPast(day) && dayData?.meals?.some(m => m.content?.trim()) ? (
+                        (() => {
+                          const total = dayData.meals.length;
+                          const filled = dayData.meals.filter(m => m.content?.trim()).length;
+                          const missing = total - filled;
+                          return `Incomplete — ${missing} meal${missing !== 1 ? 's' : ''} missing`;
+                        })()
                       ) : isDayInPast(day) ? (
                         'Missed'
                       ) : (
@@ -2241,28 +2252,29 @@ export default function NutritionCalibration({ onComplete, compact = false, prof
 
     // Start calibration if not started, then align dates to current week
     startCalibration();
-    const data = alignCalibrationToCurrentWeek();
+    let data = alignCalibrationToCurrentWeek();
     setCalibrationData(data);
 
     // Get today's day
     const progress = getCalibrationProgress();
     const today = progress.todayDay;
 
-    // Auto-complete yesterday if it has all meals filled
+    // Auto-complete all past days that have every meal slot filled
     const dayOrder = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'];
     if (today) {
       const todayIdx = dayOrder.indexOf(today);
-      if (todayIdx > 0) {
-        const yesterday = dayOrder[todayIdx - 1];
-        const yesterdayData = data.days[yesterday];
-        if (yesterdayData && !yesterdayData.completed && yesterdayData.meals?.length > 0) {
-          const allFilled = yesterdayData.meals.every(m => m.content && m.content.trim());
+      for (let i = 0; i < todayIdx; i++) {
+        const pastDay = dayOrder[i];
+        const pastDayData = data.days[pastDay];
+        if (pastDayData && !pastDayData.completed && pastDayData.meals?.length > 0) {
+          const allFilled = pastDayData.meals.every(m => m.content && m.content.trim());
           if (allFilled) {
-            const updated = completeDay(yesterday);
-            setCalibrationData(updated);
+            const updated = completeDay(pastDay);
+            data = updated;
           }
         }
       }
+      setCalibrationData(data);
     }
 
     // Re-read data after potential auto-complete

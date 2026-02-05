@@ -1730,7 +1730,7 @@ function NutritionCalibrationCard() {
           <span className="font-semibold text-gray-900">Unlock Your Nutrition Profile</span>
         </div>
         <span className="text-sm text-amber-700 font-medium">
-          Day {progress.completed + 1} of 5
+          Day {progress.calendarDay || Math.min(progress.completed + 1, 5)} of 5
         </span>
       </div>
 
@@ -1913,7 +1913,7 @@ function NutritionCalibrationCard() {
                progress.completed === 3 ? '⭐' : '🔥'}
             </span>
             <span className="text-sm font-medium text-amber-800">
-              Day {progress.completed + (calibrationData.days[todayKey] && !calibrationData.days[todayKey]?.completed ? 1 : 0)} of 5
+              Day {progress.calendarDay || Math.min(progress.completed + 1, 5)} of 5
               {progress.completed > 0 && progress.remaining > 0 && " - Keep it up!"}
             </span>
           </div>
@@ -1935,15 +1935,22 @@ function NutritionCalibrationCard() {
 
               // Get day status
               let statusIcon, statusColor;
+              const isPast = (() => {
+                const dayOrderMap = { sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5, saturday: 6 };
+                return dayOrderMap[day] < new Date().getDay();
+              })();
               if (dayData?.completed) {
                 statusIcon = '✓';
                 statusColor = 'text-green-600 bg-green-100';
               } else if (isToday) {
                 statusIcon = '●';
                 statusColor = 'text-blue-600 bg-blue-100';
-              } else if (dayFilledCount > 0) {
+              } else if (isPast && dayFilledCount > 0) {
+                statusIcon = '!';
+                statusColor = 'text-orange-600 bg-orange-100'; // incomplete — missing meals
+              } else if (isPast) {
                 statusIcon = '○';
-                statusColor = 'text-amber-600 bg-amber-100';
+                statusColor = 'text-gray-400 bg-gray-100'; // past, no data
               } else {
                 statusIcon = '○';
                 statusColor = 'text-gray-400 bg-gray-100';
@@ -1993,6 +2000,8 @@ function NutritionCalibrationCard() {
                           `Complete${dayCalories > 0 ? ` (${dayCalories.toLocaleString()} cal)` : ''}`
                         ) : isToday ? (
                           `In Progress${dayCalories > 0 ? ` (${dayCalories.toLocaleString()} cal)` : ''}`
+                        ) : isPast && dayFilledCount > 0 ? (
+                          `Incomplete — ${dayMeals.length - dayFilledCount} meal${dayMeals.length - dayFilledCount !== 1 ? 's' : ''} missing`
                         ) : dayFilledCount > 0 ? (
                           `${dayFilledCount} meals logged`
                         ) : (
@@ -2913,7 +2922,7 @@ function FullPlaybookModal({ isOpen, onClose }) {
                   Nutrition Profile
                 </h3>
                 <span className="text-sm text-amber-600 font-medium">
-                  Day {progress.completed + 1} of 5
+                  Day {progress.calendarDay || Math.min(progress.completed + 1, 5)} of 5
                 </span>
               </div>
 

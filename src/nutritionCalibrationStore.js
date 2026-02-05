@@ -1024,6 +1024,8 @@ export function getCalibrationProgress() {
   const inPeriod = isInCalibrationPeriod();
   const todayDay = getCurrentCalendarDay();
   const nextDay = getNextAvailableDay();
+  // Calendar-based day number (1-5), regardless of completion status
+  const calendarDay = todayDay ? CALIBRATION_DAYS.indexOf(todayDay) + 1 : completed;
 
   return {
     completed,
@@ -1035,6 +1037,7 @@ export function getCalibrationProgress() {
     currentDay: data.currentDay,
     todayDay, // The actual calendar day (null on weekends)
     nextDay, // Next available day after today
+    calendarDay, // 1-5 based on what day of the week it is
     days: data.days,
     startedAt: data.startedAt,
     completedAt: data.completedAt,
