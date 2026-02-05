@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ChevronRight, ChevronLeft, Target, Lightbulb, MessageCircle, Dumbbell } from 'lucide-react';
+import { ChevronRight, ChevronLeft, Target, Lightbulb, MessageCircle, Dumbbell, Rocket, MapPin, BarChart3 } from 'lucide-react';
 
 const SCREENS = [
   {
@@ -9,15 +9,6 @@ const SCREENS = [
     icon: Dumbbell,
     iconColor: 'text-primary-600',
     iconBg: 'bg-primary-100',
-    content: null,
-    buttonText: 'Get Started',
-  },
-  {
-    id: 'who',
-    title: 'WHO IS LOCKHART FOR?',
-    icon: Target,
-    iconColor: 'text-emerald-600',
-    iconBg: 'bg-emerald-100',
     content: (
       <div className="space-y-4 text-left">
         <p className="text-gray-600">
@@ -26,12 +17,9 @@ const SCREENS = [
         <p className="text-gray-800 font-medium">
           But you want that extra edge.
         </p>
-        <p className="text-gray-600">
-          Lockhart is for people who want to <span className="font-semibold text-gray-800">OPTIMIZE</span> - not overhaul - their training and nutrition.
-        </p>
         <div className="space-y-2 pt-2">
           <div className="flex items-center gap-2 text-gray-700">
-            <div className="w-5 h-5 rounded-full bg-emerald-100 flex items-center justify-center">
+            <div className="w-5 h-5 rounded-full bg-emerald-100 flex items-center justify-center flex-shrink-0">
               <svg className="w-3 h-3 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
               </svg>
@@ -39,7 +27,7 @@ const SCREENS = [
             <span>You work out regularly</span>
           </div>
           <div className="flex items-center gap-2 text-gray-700">
-            <div className="w-5 h-5 rounded-full bg-emerald-100 flex items-center justify-center">
+            <div className="w-5 h-5 rounded-full bg-emerald-100 flex items-center justify-center flex-shrink-0">
               <svg className="w-3 h-3 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
               </svg>
@@ -47,7 +35,7 @@ const SCREENS = [
             <span>You eat reasonably well</span>
           </div>
           <div className="flex items-center gap-2 text-gray-700">
-            <div className="w-5 h-5 rounded-full bg-emerald-100 flex items-center justify-center">
+            <div className="w-5 h-5 rounded-full bg-emerald-100 flex items-center justify-center flex-shrink-0">
               <svg className="w-3 h-3 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
               </svg>
@@ -55,6 +43,59 @@ const SCREENS = [
             <span>You want personalized guidance, not generic advice</span>
           </div>
         </div>
+      </div>
+    ),
+    buttonText: 'Get Started',
+  },
+  {
+    id: 'what',
+    title: 'What is Lockhart?',
+    icon: Target,
+    iconColor: 'text-emerald-600',
+    iconBg: 'bg-emerald-100',
+    content: (
+      <div className="space-y-4 text-left">
+        <p className="text-gray-600">
+          Lockhart is your AI-powered health advisor. It learns your habits, tracks your nutrition, and gives you personalized guidance to help you reach your goals.
+        </p>
+        <div className="mt-2">
+          <h3 className="text-sm font-bold text-gray-900 flex items-center gap-1.5 mb-3">
+            What's Coming Next <span>🚀</span>
+          </h3>
+          <div className="space-y-2.5">
+            <div className="flex items-start gap-3 p-2.5 bg-gray-50 rounded-xl border border-gray-100">
+              <span className="text-lg mt-0.5">📍</span>
+              <div>
+                <h4 className="font-semibold text-gray-800 text-sm">Geographic Grocery Recommendations</h4>
+                <p className="text-xs text-gray-500 mt-0.5">See which grocery stores near you carry the foods Lockhart recommends</p>
+              </div>
+            </div>
+            <div className="flex items-start gap-3 p-2.5 bg-gray-50 rounded-xl border border-gray-100">
+              <span className="text-lg mt-0.5">🏋️</span>
+              <div>
+                <h4 className="font-semibold text-gray-800 text-sm">Workout Routines</h4>
+                <p className="text-xs text-gray-500 mt-0.5">Lockhart will generate personalized training plans based on your goals</p>
+              </div>
+            </div>
+            <div className="flex items-start gap-3 p-2.5 bg-gray-50 rounded-xl border border-gray-100">
+              <span className="text-lg mt-0.5">🔄</span>
+              <div>
+                <h4 className="font-semibold text-gray-800 text-sm">Smart Meal Planning</h4>
+                <p className="text-xs text-gray-500 mt-0.5">AI-generated weekly meal plans that fit your preferences and budget</p>
+              </div>
+            </div>
+            <div className="flex items-start gap-3 p-2.5 bg-gray-50 rounded-xl border border-gray-100">
+              <span className="text-lg mt-0.5">📊</span>
+              <div>
+                <h4 className="font-semibold text-gray-800 text-sm">Advanced Analytics</h4>
+                <p className="text-xs text-gray-500 mt-0.5">Deeper insights into your nutrition trends and progress over time</p>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p className="text-xs text-gray-500 italic pt-1">
+          Have a feature idea? Tell Lockhart in the advisor chat — we're building this for you.
+        </p>
       </div>
     ),
   },
@@ -199,12 +240,12 @@ export default function PreOnboardingIntro({ onComplete }) {
 
         {/* Subtitle (for welcome screen) */}
         {screen.subtitle && (
-          <p className="text-gray-600 text-center mb-8">{screen.subtitle}</p>
+          <p className="text-gray-600 text-center mb-4">{screen.subtitle}</p>
         )}
 
         {/* Content */}
         {screen.content && (
-          <div className="max-w-sm w-full mt-4 mb-8">
+          <div className="max-w-sm w-full mt-2 mb-6 overflow-y-auto max-h-[50vh]">
             {screen.content}
           </div>
         )}

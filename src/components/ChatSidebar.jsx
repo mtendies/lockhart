@@ -128,7 +128,9 @@ export default function ChatSidebar({
 
   // Format date
   function formatDate(dateStr) {
+    if (!dateStr) return '';
     const date = new Date(dateStr);
+    if (isNaN(date.getTime())) return '';
     const now = new Date();
     const diffDays = Math.floor((now - date) / (24 * 60 * 60 * 1000));
 
@@ -324,7 +326,7 @@ export default function ChatSidebar({
                               {getChatSummary(chat)}
                             </p>
                             <span className="text-[10px] text-gray-400 mt-1 block">
-                              {formatDate(chat.lastActivity)}
+                              {formatDate(chat.lastActivity || chat.createdAt)}
                             </span>
                           </>
                         )}

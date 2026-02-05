@@ -2115,10 +2115,21 @@ function AddGoalForm({ onAdd, onCancel }) {
 }
 
 // Single Goal Card for new system
-function GoalCard({ goal, onIncrement, onEdit, onRemove }) {
+function GoalCard({ goal, onIncrement, onEdit, onRemove, goalHistory }) {
   const isComplete = goal.status === 'completed';
   const isCarried = !!goal.carriedFrom;
+  const isAutoCompleted = isComplete && goal.autoCompleted && !goal.confirmedComplete;
   const progressPercent = goal.target > 0 ? Math.min(100, Math.round((goal.current / goal.target) * 100)) : 0;
+
+  // Look up previous week progress for carried goals
+  let prevProgress = null;
+  if (isCarried && goalHistory) {
+    const prevWeek = goalHistory.find(h => h.weekOf === goal.carriedFrom);
+    if (prevWeek) {
+      const prevGoal = prevWeek.goals.find(g => g.text === goal.text);
+      if (prevGoal) prevProgress = { current: prevGoal.current, target: prevGoal.target };
+    }
+  }
 
   let bgColor = 'bg-white';
   let progressFillColor = 'bg-green-500';
@@ -2162,7 +2173,9 @@ function GoalCard({ goal, onIncrement, onEdit, onRemove }) {
                 {isComplete && goal.current >= goal.target && ' \ud83c\udf89'}
               </p>
               {isCarried && (
-                <p className="text-xs text-amber-600 mt-0.5">Carried from last week</p>
+                <p className="text-xs text-amber-600 mt-0.5">
+                  Carried from last week{prevProgress ? ` (was ${prevProgress.current}/${prevProgress.target})` : ''}
+                </p>
               )}
               {isComplete && goal.autoCompleted && !goal.confirmedComplete && (
                 <p className="text-xs text-green-600 mt-0.5">Auto-completed! Will confirm in Sunday check-in</p>
@@ -2187,7 +2200,7 @@ function GoalCard({ goal, onIncrement, onEdit, onRemove }) {
 
             {/* Action buttons */}
             <div className="flex items-center gap-0.5 ml-1">
-              {!isComplete && (
+              {(!isComplete || isAutoCompleted) && (
                 <button
                   onClick={(e) => { e.stopPropagation(); onIncrement?.(goal.id); }}
                   className="px-1.5 py-0.5 text-xs font-semibold text-green-600 hover:bg-green-50 active:bg-green-100 rounded transition-colors border border-green-200"
@@ -2350,6 +2363,7 @@ function FocusGoalsCard() {
   const [editingGoal, setEditingGoal] = useState(null);
   const [showHistory, setShowHistory] = useState(false);
   const [toast, setToast] = useState(null);
+  const goalHistory = useMemo(() => getGoalHistory(), [goals]);
 
   useEffect(() => {
     setGoals(getGoalsWithProgress());
@@ -2414,6 +2428,7 @@ function FocusGoalsCard() {
             <GoalCard
               key={goal.id}
               goal={goal}
+              goalHistory={goalHistory}
               onIncrement={handleIncrement}
               onEdit={(g) => setEditingGoal(g)}
               onRemove={handleRemove}

@@ -180,10 +180,40 @@ export function getWorkoutsForDate(date) {
 }
 
 /**
- * Get recent workouts
+ * Get recent workouts — merges workoutStore entries with workout-type activities
+ * so workouts logged from the home quick-entry also appear on the Training page.
  */
 export function getRecentWorkouts(count = 10) {
-  return getWorkouts().slice(0, count);
+  const storeWorkouts = getWorkouts();
+
+  // Also pull workout-type activities that may not be in the store
+  const activities = getActivities()
+    .filter(a => a.type === ACTIVITY_TYPES.WORKOUT)
+    .filter(a => !storeWorkouts.some(w => w.id === a.data?.workoutId));
+
+  // Convert activities to workout-like shape
+  const activityWorkouts = activities.map(a => ({
+    id: a.id,
+    timestamp: a.timestamp,
+    date: a.timestamp?.split('T')[0],
+    rawText: a.rawText,
+    summary: a.summary,
+    exercise: a.data?.exercise,
+    type: a.subType || 'other',
+    sets: a.data?.sets,
+    reps: a.data?.reps,
+    weight: a.data?.weight,
+    distance: a.data?.distance,
+    duration: a.data?.duration,
+    pace: a.data?.pace,
+    notes: a.data?.notes,
+    source: a.source || 'dashboard',
+  }));
+
+  // Merge and sort by timestamp descending
+  return [...storeWorkouts, ...activityWorkouts]
+    .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+    .slice(0, count);
 }
 
 /**
