@@ -222,6 +222,7 @@ import {
   reorderDayMeals,
   addMealToDay,
   removeMealFromDay,
+  canCompleteDay,
   ALL_MEAL_TYPES,
   getDefaultMealPattern,
   saveDefaultMealPattern,
@@ -1945,9 +1946,12 @@ function NutritionCalibrationCard() {
               } else if (isToday) {
                 statusIcon = '●';
                 statusColor = 'text-blue-600 bg-blue-100';
-              } else if (isPast && dayFilledCount > 0) {
+              } else if (isPast && dayFilledCount > 0 && !canCompleteDay(day)) {
                 statusIcon = '!';
-                statusColor = 'text-orange-600 bg-orange-100'; // incomplete — missing meals
+                statusColor = 'text-orange-600 bg-orange-100'; // incomplete — not enough meals
+              } else if (isPast && dayFilledCount > 0) {
+                statusIcon = '✓';
+                statusColor = 'text-green-600 bg-green-100'; // filled enough to be complete
               } else if (isPast) {
                 statusIcon = '○';
                 statusColor = 'text-gray-400 bg-gray-100'; // past, no data
@@ -2000,8 +2004,10 @@ function NutritionCalibrationCard() {
                           `Complete${dayCalories > 0 ? ` (${dayCalories.toLocaleString()} cal)` : ''}`
                         ) : isToday ? (
                           `In Progress${dayCalories > 0 ? ` (${dayCalories.toLocaleString()} cal)` : ''}`
+                        ) : isPast && dayFilledCount > 0 && !canCompleteDay(day) ? (
+                          `Incomplete — needs at least 2 meals`
                         ) : isPast && dayFilledCount > 0 ? (
-                          `Incomplete — ${dayMeals.length - dayFilledCount} meal${dayMeals.length - dayFilledCount !== 1 ? 's' : ''} missing`
+                          `Complete${dayCalories > 0 ? ` (${dayCalories.toLocaleString()} cal)` : ''}`
                         ) : dayFilledCount > 0 ? (
                           `${dayFilledCount} meals logged`
                         ) : (

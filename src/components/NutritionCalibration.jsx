@@ -461,7 +461,8 @@ function CompletedDaysDropdown({ progress, calibrationData, onEditDay }) {
     if (isToday) return { icon: '●', color: 'text-blue-600 bg-blue-100' };
     if (isDayInPast(day)) {
       const hasMeals = dayData?.meals?.some(m => m.content?.trim());
-      if (hasMeals) return { icon: '!', color: 'text-orange-600 bg-orange-100' }; // incomplete
+      if (hasMeals && !canCompleteDay(day)) return { icon: '!', color: 'text-orange-600 bg-orange-100' }; // incomplete — not enough meals
+      if (hasMeals) return { icon: '✓', color: 'text-green-600 bg-green-100' }; // filled enough to be complete
       return { icon: '○', color: 'text-gray-400 bg-gray-100' }; // no data
     }
     return { icon: '○', color: 'text-gray-400 bg-gray-100' };
@@ -524,13 +525,10 @@ function CompletedDaysDropdown({ progress, calibrationData, onEditDay }) {
                         `Complete${calories > 0 ? ` (${calories.toLocaleString()} cal)` : ''}`
                       ) : isToday ? (
                         `In Progress${calories > 0 ? ` (${calories.toLocaleString()} cal)` : ''}`
+                      ) : isDayInPast(day) && dayData?.meals?.some(m => m.content?.trim()) && !canCompleteDay(day) ? (
+                        'Incomplete — needs at least 2 meals'
                       ) : isDayInPast(day) && dayData?.meals?.some(m => m.content?.trim()) ? (
-                        (() => {
-                          const total = dayData.meals.length;
-                          const filled = dayData.meals.filter(m => m.content?.trim()).length;
-                          const missing = total - filled;
-                          return `Incomplete — ${missing} meal${missing !== 1 ? 's' : ''} missing`;
-                        })()
+                        `Complete${calories > 0 ? ` (${calories.toLocaleString()} cal)` : ''}`
                       ) : isDayInPast(day) ? (
                         'Missed'
                       ) : (
@@ -2259,19 +2257,16 @@ export default function NutritionCalibration({ onComplete, compact = false, prof
     const progress = getCalibrationProgress();
     const today = progress.todayDay;
 
-    // Auto-complete all past days that have every meal slot filled
+    // Auto-complete all past days that meet the completion threshold
     const dayOrder = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'];
     if (today) {
       const todayIdx = dayOrder.indexOf(today);
       for (let i = 0; i < todayIdx; i++) {
         const pastDay = dayOrder[i];
         const pastDayData = data.days[pastDay];
-        if (pastDayData && !pastDayData.completed && pastDayData.meals?.length > 0) {
-          const allFilled = pastDayData.meals.every(m => m.content && m.content.trim());
-          if (allFilled) {
-            const updated = completeDay(pastDay);
-            data = updated;
-          }
+        if (pastDayData && !pastDayData.completed && canCompleteDay(pastDay)) {
+          const updated = completeDay(pastDay);
+          data = updated;
         }
       }
       setCalibrationData(data);
