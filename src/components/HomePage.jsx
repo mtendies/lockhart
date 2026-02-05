@@ -2116,10 +2116,12 @@ function AddGoalForm({ onAdd, onCancel }) {
 
 // Single Goal Card for new system
 function GoalCard({ goal, onIncrement, onEdit, onRemove, goalHistory }) {
+  const [showEntries, setShowEntries] = useState(false);
   const isComplete = goal.status === 'completed';
   const isCarried = !!goal.carriedFrom;
   const isAutoCompleted = isComplete && goal.autoCompleted && !goal.confirmedComplete;
   const progressPercent = goal.target > 0 ? Math.min(100, Math.round((goal.current / goal.target) * 100)) : 0;
+  const activities = goal.contributingActivities || [];
 
   // Look up previous week progress for carried goals
   let prevProgress = null;
@@ -2225,6 +2227,33 @@ function GoalCard({ goal, onIncrement, onEdit, onRemove, goalHistory }) {
               </button>
             </div>
           </div>
+
+          {/* Contributing entries toggle */}
+          {activities.length > 0 && (
+            <button
+              onClick={() => setShowEntries(!showEntries)}
+              className="mt-1.5 flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 transition-colors"
+            >
+              {showEntries ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+              {activities.length} {activities.length === 1 ? 'entry' : 'entries'}
+            </button>
+          )}
+
+          {/* Expanded entries list */}
+          {showEntries && activities.length > 0 && (
+            <div className="mt-2 space-y-1 pl-1 border-l-2 border-gray-200 ml-1">
+              {activities.map((a, i) => {
+                const dayName = new Date(a.timestamp).toLocaleDateString('en-US', { weekday: 'short' });
+                const summary = a.summary || a.rawText || '';
+                return (
+                  <p key={a.id || i} className="text-xs text-gray-500 pl-2 leading-snug">
+                    <span className="font-medium text-gray-600">{dayName}:</span>{' '}
+                    {summary.length > 60 ? summary.slice(0, 60) + '...' : summary}
+                  </p>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
     </div>

@@ -239,14 +239,28 @@ export function refreshGoalProgress() {
 }
 
 /**
- * Get goals with fresh progress data
+ * Get goals with fresh progress data and contributing activities.
+ * contributingActivities is computed on-the-fly (not persisted).
  */
 export function getGoalsWithProgress() {
   const goals = getGoals();
   refreshGoalProgress();
   // Re-read after refresh
   const data = getGoalsData();
-  return data?.goals || goals;
+  const refreshedGoals = data?.goals || goals;
+
+  // Attach contributing activities to each trackable goal
+  return refreshedGoals.map(goal => {
+    if (goal.status === 'dropped') return goal;
+    const parsed = parseFocusItem(goal.text);
+    if (parsed) {
+      const progress = calculateFocusProgress({ action: goal.text });
+      if (progress.trackable && progress.contributingActivities) {
+        return { ...goal, contributingActivities: progress.contributingActivities };
+      }
+    }
+    return goal;
+  });
 }
 
 // ============================================
