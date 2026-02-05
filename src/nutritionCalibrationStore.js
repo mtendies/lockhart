@@ -1016,7 +1016,28 @@ export function logMealFromChat(mealType, description) {
 /**
  * Get a summary of calibration progress for display
  */
+/**
+ * Auto-complete any past days that meet the completion threshold.
+ * Called from getCalibrationProgress() so it runs wherever progress is read.
+ */
+export function autoCompletePastDays() {
+  const today = getCurrentCalendarDay();
+  if (!today) return; // weekend
+  const data = getCalibrationData();
+  if (data.completedAt) return; // already fully complete
+  const todayIdx = CALIBRATION_DAYS.indexOf(today);
+  let changed = false;
+  for (let i = 0; i < todayIdx; i++) {
+    const day = CALIBRATION_DAYS[i];
+    if (data.days[day] && !data.days[day].completed && canCompleteDay(day)) {
+      completeDay(day);
+      changed = true;
+    }
+  }
+}
+
 export function getCalibrationProgress() {
+  autoCompletePastDays();
   const data = getCalibrationData();
   const completed = getCompletedDaysCount();
   const remaining = getRemainingDaysCount();

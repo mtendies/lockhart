@@ -33,7 +33,7 @@ import {
   getWins,
 } from '../groceryStore';
 import { getPendingSuggestions } from '../playbookSuggestionsStore';
-import { recordSwapPurchase, getActiveSwaps, logSwap, detectCategory, SWAP_STATUS, SWAP_SOURCES, activatePendingSwap } from '../swapStore';
+import { recordSwapPurchase, getActiveSwaps, getSwaps, logSwap, detectCategory, SWAP_STATUS, SWAP_SOURCES, activatePendingSwap } from '../swapStore';
 import GrocerySwaps from './GrocerySwaps';
 import DailyNutritionProfile from './DailyNutritionProfile';
 
@@ -163,14 +163,19 @@ export default function Nutrition({ profile, playbook, onGroceryDataChange, onPl
     setUploading(true);
     setUploadError(null);
 
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('source', selectedSource);
-
     try {
+      // Convert file to base64 — the API expects { fileData, fileType }
+      const fileData = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result.split(',')[1]); // strip data:...;base64, prefix
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
       const res = await fetch('/api/parse-grocery', {
         method: 'POST',
-        body: formData,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileData, fileType: file.type, source: selectedSource }),
       });
 
       if (!res.ok) throw new Error(`Server error: ${res.status}`);
@@ -766,11 +771,19 @@ export default function Nutrition({ profile, playbook, onGroceryDataChange, onPl
             </div>
 
             {/* Smart Swaps */}
-            {groceryData.recommendations.smartSwaps?.length > 0 && (
+            {(() => {
+              const mySwaps = getSwaps();
+              const filteredSmartSwaps = (groceryData.recommendations.smartSwaps || []).filter(rec =>
+                !mySwaps.some(s =>
+                  s.originalProduct?.toLowerCase() === rec.current?.toLowerCase() &&
+                  s.newProduct?.toLowerCase() === rec.suggestion?.toLowerCase()
+                )
+              );
+              return filteredSmartSwaps.length > 0 ? (
               <div className="mb-5">
                 <h3 className="text-sm font-semibold text-gray-700 mb-3">Smart Swaps</h3>
                 <div className="space-y-2">
-                  {groceryData.recommendations.smartSwaps.map((swap, idx) => (
+                  {filteredSmartSwaps.map((swap, idx) => (
                     <div key={idx} className="bg-white rounded-xl p-3 border border-gray-100">
                       <div className="flex items-start gap-3">
                         <div className="flex-1">
@@ -819,7 +832,13 @@ export default function Nutrition({ profile, playbook, onGroceryDataChange, onPl
                   ))}
                 </div>
               </div>
-            )}
+              ) : groceryData.recommendations.smartSwaps?.length > 0 ? (
+              <div className="mb-5">
+                <h3 className="text-sm font-semibold text-gray-700 mb-3">Smart Swaps</h3>
+                <p className="text-sm text-gray-500 italic">All caught up! No new recommendations.</p>
+              </div>
+              ) : null;
+            })()}
 
             {/* Potential Gaps */}
             {groceryData.recommendations.potentialGaps?.length > 0 && (

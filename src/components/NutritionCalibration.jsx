@@ -2250,29 +2250,12 @@ export default function NutritionCalibration({ onComplete, compact = false, prof
 
     // Start calibration if not started, then align dates to current week
     startCalibration();
-    let data = alignCalibrationToCurrentWeek();
-    setCalibrationData(data);
+    alignCalibrationToCurrentWeek();
 
-    // Get today's day
+    // getCalibrationProgress() auto-completes past days internally
     const progress = getCalibrationProgress();
     const today = progress.todayDay;
 
-    // Auto-complete all past days that meet the completion threshold
-    const dayOrder = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'];
-    if (today) {
-      const todayIdx = dayOrder.indexOf(today);
-      for (let i = 0; i < todayIdx; i++) {
-        const pastDay = dayOrder[i];
-        const pastDayData = data.days[pastDay];
-        if (pastDayData && !pastDayData.completed && canCompleteDay(pastDay)) {
-          const updated = completeDay(pastDay);
-          data = updated;
-        }
-      }
-      setCalibrationData(data);
-    }
-
-    // Re-read data after potential auto-complete
     const freshData = getCalibrationData();
     setCalibrationData(freshData);
 
