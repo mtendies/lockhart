@@ -366,12 +366,45 @@ export function getCalibrationData() {
     const saved = getItem(STORAGE_KEY);
     if (saved) {
       const data = JSON.parse(saved);
-      // Migrate all days to new meals array format
+
+      // Ensure days object exists
+      if (!data.days) {
+        data.days = {};
+      }
+
+      // Migrate existing days AND ensure all 5 days exist
+      let repaired = false;
       for (const day of CALIBRATION_DAYS) {
         if (data.days[day]) {
+          // Migrate existing day to new format
           data.days[day] = migrateDayToMeals(data.days[day]);
+        } else {
+          // Create missing day structure
+          console.warn(`[NutritionCalibration] Repairing missing day: ${day}`);
+          data.days[day] = createEmptyDayWithMeals();
+          repaired = true;
         }
       }
+
+      // If all 5 days are now completed but completedAt wasn't set, fix it
+      if (!data.completedAt) {
+        const allComplete = CALIBRATION_DAYS.every(d => data.days[d]?.completed);
+        if (allComplete) {
+          console.log('[NutritionCalibration] All 5 days complete - setting completedAt');
+          data.completedAt = new Date().toISOString();
+          // Generate profile if not already done
+          generateNutritionProfile(data);
+          repaired = true;
+        }
+      }
+
+      // Save repaired data
+      if (repaired) {
+        console.log('[NutritionCalibration] Saving repaired calibration data');
+        setItem(STORAGE_KEY, JSON.stringify(data));
+        syncNutritionImmediate();
+      }
+
       return data;
     }
   } catch (e) {
