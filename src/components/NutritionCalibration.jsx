@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { hasLoseFatGoal, hasBuildMuscleGoal } from '../profileHelpers';
 import {
   DndContext,
   closestCenter,
@@ -101,10 +102,9 @@ function calculateDailyCalorieBudget(profile) {
 
   const tdee = bmr * multiplier;
 
-  // Check for weight-related goals (check all possible key variations)
-  const goals = profile.goals || [];
-  const hasLoseFat = goals.includes('fat_loss') || goals.includes('lose_fat') || goals.includes('loseFat') || goals.includes('weightLoss') || goals.includes('weight_loss');
-  const hasBuildMuscle = goals.includes('build_muscle') || goals.includes('buildMuscle') || goals.includes('muscle_gain') || goals.includes('muscleGain');
+  // Check for weight-related goals (handles array, string, object, or undefined)
+  const hasLoseFat = hasLoseFatGoal(profile.goals);
+  const hasBuildMuscle = hasBuildMuscleGoal(profile.goals);
 
   // Fat loss takes priority over muscle gain for calorie calculation
   if (hasLoseFat) {

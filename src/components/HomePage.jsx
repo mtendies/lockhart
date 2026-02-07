@@ -40,6 +40,7 @@ import {
 } from 'lucide-react';
 import { estimateCalories, SOURCE_URLS } from '../calorieEstimator';
 import { estimateCaloriesAI, getCachedOrRuleBased } from '../aiCalorieEstimator';
+import { hasLoseFatGoal, hasBuildMuscleGoal, getGoalsArray } from '../profileHelpers';
 import { getPlaybook } from '../playbookStore';
 import { logActivity, ACTIVITY_TYPES, ACTIVITY_SOURCES, WORKOUT_TYPES } from '../activityLogStore';
 import DeleteConfirmationModal from './DeleteConfirmationModal';
@@ -167,10 +168,9 @@ function calculateDailyCalorieBudget(profile) {
   // Total TDEE = base + exercise
   const totalTdee = baseTdee + dailyExerciseCalories;
 
-  // Goal adjustments
-  const goals = profile.goals || [];
-  const hasLoseFat = goals.includes('fat_loss') || goals.includes('lose_fat') || goals.includes('loseFat') || goals.includes('weightLoss') || goals.includes('weight_loss');
-  const hasBuildMuscle = goals.includes('build_muscle') || goals.includes('buildMuscle') || goals.includes('muscle_gain') || goals.includes('muscleGain');
+  // Goal adjustments - use safe helpers
+  const hasLoseFat = hasLoseFatGoal(profile.goals);
+  const hasBuildMuscle = hasBuildMuscleGoal(profile.goals);
 
   // Fat loss takes priority over muscle gain
   if (hasLoseFat) return Math.round(totalTdee - 500);
@@ -243,8 +243,8 @@ function GoalReminder({ profile }) {
 
   if (dismissed) return null;
 
-  // Get user's goals from profile - ensure it's always an array
-  const goals = Array.isArray(profile?.goals) ? profile.goals : [];
+  // Get user's goals from profile - use safe helper
+  const goals = getGoalsArray(profile?.goals);
   const goalDetails = profile?.goalDetails || {};
 
   if (goals.length === 0) return null;
@@ -2616,9 +2616,10 @@ function PlaybookLinkCard({ onViewPlaybook }) {
     setPlaybook(getPlaybook());
   }, []);
 
-  // Get goal description from profile
-  const goalText = profile?.goals?.[0]
-    ? `your goal to ${profile.goals[0].replace(/_/g, ' ')}`
+  // Get goal description from profile - use safe helper
+  const goalsArr = getGoalsArray(profile?.goals);
+  const goalText = goalsArr.length > 0
+    ? `your goal to ${goalsArr[0].replace(/_/g, ' ')}`
     : 'reaching your health goals';
 
   return (
@@ -2966,8 +2967,9 @@ function FullPlaybookModal({ isOpen, onClose }) {
   const profile = getProfile();
 
   // Get goal description
-  const goalText = profile?.goals?.[0]
-    ? `reaching ${profile.goals[0].replace(/_/g, ' ')}`
+  const goalsArray = getGoalsArray(profile?.goals);
+  const goalText = goalsArray.length > 0
+    ? `reaching ${goalsArray[0].replace(/_/g, ' ')}`
     : 'reaching your health goals';
 
   return (
@@ -3426,8 +3428,8 @@ export default function HomePage({ onNavigate, onOpenCheckIn, syncStatus, onRefr
                     onClick={() => {
                       setShowCompletionBanner(false);
                       localStorage.setItem('health-advisor-calibration-banner-dismissed', 'true');
-                      // Navigate to Nutrition page
-                      window.location.href = '/nutrition';
+                      // Navigate to Nutrition page using SPA navigation
+                      onNavigate?.('nutrition');
                     }}
                     className="mt-3 inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white text-sm font-medium rounded-xl hover:bg-emerald-700 transition-colors"
                   >

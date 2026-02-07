@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { hasGoal } from '../profileHelpers';
 import { Send, Menu, Search, Check, X, Sparkles, MessageCircle, Activity } from 'lucide-react';
 import { extractNotes, stripNotes } from '../noteParser';
 import { addNote, getNotes } from '../notesStore';
@@ -206,11 +207,11 @@ export default function Chat({
     if (profile?.calorieTarget) {
       calorieTarget = profile.calorieTarget;
     } else if (profile?.goals) {
-      // Simple calculation: base 2000 + adjustments
-      const hasLoseFat = profile.goals.some(g => g.includes('loss') || g.includes('fat'));
-      const hasBuildMuscle = profile.goals.some(g => g.includes('muscle') || g.includes('gain'));
-      if (hasLoseFat) calorieTarget = 1800;
-      else if (hasBuildMuscle) calorieTarget = 2500;
+      // Simple calculation: base 2000 + adjustments (handles array, string, object, or undefined)
+      const goalsHasLoseFat = hasGoal(profile.goals, 'loss') || hasGoal(profile.goals, 'fat');
+      const goalsHasBuildMuscle = hasGoal(profile.goals, 'muscle') || hasGoal(profile.goals, 'gain');
+      if (goalsHasLoseFat) calorieTarget = 1800;
+      else if (goalsHasBuildMuscle) calorieTarget = 2500;
     }
 
     return {

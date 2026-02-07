@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { hasGoal } from '../profileHelpers';
 import {
   Lock,
   Unlock,
@@ -254,7 +255,7 @@ function UnlockedProfile({ profile, onAnalyze, userProfile }) {
             label="Protein Estimate"
             value={profile.overview?.proteinEstimate || '~80g'}
             sources={[
-              userProfile?.goals?.some(g => g.toLowerCase().includes('muscle'))
+              hasGoal(userProfile?.goals, 'muscle')
                 ? COMMON_SOURCES.proteinAthletes
                 : COMMON_SOURCES.proteinRDA,
               COMMON_SOURCES.acsm,
