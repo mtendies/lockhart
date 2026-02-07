@@ -10,7 +10,7 @@ export default async function handler(req, res) {
   }
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
-  const { text } = req.body;
+  const { text, recentGroceries } = req.body;
 
   if (!text || !text.trim()) {
     return res.status(400).json({ error: 'Meal text required' });
@@ -22,7 +22,12 @@ export default async function handler(req, res) {
 
   const client = new Anthropic({ apiKey });
 
-  const systemPrompt = `You are a nutrition calculator. Parse the following meal description and return ONLY a JSON object of food items with calories. Be accurate about portions - if the user says "2 sandwiches", multiply ALL ingredients by 2. Account for cooking methods and preparation.
+  // Build grocery context section if available
+  const groceryContext = recentGroceries && recentGroceries.length > 0
+    ? `\n\nThe user recently purchased these groceries:\n${recentGroceries.map(item => `- ${item}`).join('\n')}\n\nWhen the user mentions a generic food (like "yogurt" or "bread"), assume it's one of their recently purchased items unless they specify otherwise. If ambiguous between multiple purchased options (e.g., they have both "0% Fage Greek Yogurt" and "2% Chobani"), use the most common/likely one but set needsClarification to true.`
+    : '';
+
+  const systemPrompt = `You are a nutrition calculator. Parse the following meal description and return ONLY a JSON object of food items with calories. Be accurate about portions - if the user says "2 sandwiches", multiply ALL ingredients by 2. Account for cooking methods and preparation.${groceryContext}
 
 Return format:
 {
@@ -37,11 +42,21 @@ Return format:
     }
   ],
   "totalCalories": 850,
-  "notes": "Estimated for 2 full sandwiches with standard portions"
+  "notes": "Estimated for 2 full sandwiches with standard portions",
+  "needsClarification": false,
+  "clarificationQuestion": null,
+  "clarificationOptions": null
 }
 
+If you need to clarify which specific product the user meant (because they have multiple similar items in their groceries), include:
+- "needsClarification": true
+- "clarificationQuestion": "Did you mean the 0% Fage Greek Yogurt you bought recently?"
+- "clarificationOptions": ["0% Fage Greek Yogurt", "2% Chobani", "Other yogurt"]
+
+Still provide your best estimate in the items array even when asking for clarification.
+
 Confidence levels:
-- high: common food, clear portion
+- high: common food, clear portion (or matched to user's grocery item)
 - medium: had to estimate portion size
 - low: very ambiguous, could vary significantly
 
@@ -53,6 +68,7 @@ Rules:
 - Always include reasonable amounts of cooking oils, condiments, and spreads when implied
 - Use standard USDA-referenced calorie values where possible
 - Round totalCalories for each item to the nearest 5
+- When matching to user's grocery items, use the specific product's nutrition info if you know it
 
 Respond with ONLY valid JSON, no other text.`;
 

@@ -40,7 +40,8 @@
       "Bash(cat /Users/Maxwell/health-coach/.env ls -la /Users/Maxwell/health-coach/.env* grep -r \"service_role\\\\|SUPABASE\" /Users/Maxwell/health-coach/*.*)",
       "Bash(node debug-supabase.mjs:*)",
       "Bash(node debug-auth.mjs:*)",
-      "Bash(xxd:*)"
+      "Bash(xxd:*)",
+      "Bash(git status:*)"
     ]
   }
 }

@@ -229,6 +229,7 @@ export async function syncAllToSupabase() {
 // ============================================
 
 const syncTimers = {};
+const pendingSyncs = new Set(); // Track keys that need syncing
 const DEBOUNCE_MS = 1000; // Wait 1 second before syncing
 
 /**
@@ -238,6 +239,9 @@ const DEBOUNCE_MS = 1000; // Wait 1 second before syncing
  * @param {string} localKey - The localStorage key
  */
 export function syncToSupabaseDebounced(localKey) {
+  // Track this key as needing sync
+  pendingSyncs.add(localKey);
+
   // Clear existing timer for this key
   if (syncTimers[localKey]) {
     clearTimeout(syncTimers[localKey]);
@@ -246,8 +250,36 @@ export function syncToSupabaseDebounced(localKey) {
   // Set new timer
   syncTimers[localKey] = setTimeout(() => {
     syncToSupabase(localKey);
+    pendingSyncs.delete(localKey);
     delete syncTimers[localKey];
   }, DEBOUNCE_MS);
+}
+
+/**
+ * Flush all pending debounced syncs immediately.
+ * Called on page unload to prevent data loss.
+ */
+export function flushPendingSyncs() {
+  for (const localKey of pendingSyncs) {
+    if (syncTimers[localKey]) {
+      clearTimeout(syncTimers[localKey]);
+      delete syncTimers[localKey];
+    }
+    // Fire sync immediately (can't await in beforeunload)
+    syncToSupabase(localKey);
+  }
+  pendingSyncs.clear();
+}
+
+// Flush pending syncs when user leaves the page
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeunload', flushPendingSyncs);
+  // Also handle visibility change (mobile browsers)
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') {
+      flushPendingSyncs();
+    }
+  });
 }
 
 // ============================================
@@ -390,6 +422,7 @@ export default {
   syncToSupabase,
   syncAllToSupabase,
   syncToSupabaseDebounced,
+  flushPendingSyncs,
   syncProfile,
   syncActivities,
   syncChats,

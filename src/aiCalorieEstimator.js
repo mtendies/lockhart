@@ -4,9 +4,11 @@
  * Calls the Anthropic API to parse meal descriptions into calorie breakdowns.
  * Falls back to the rule-based estimator when offline or on API failure.
  * Caches results in memory so the same meal text doesn't re-call the API.
+ * Includes recent grocery context for smarter assumptions.
  */
 
 import { estimateCalories as estimateCaloriesRuleBased } from './calorieEstimator';
+import { getRecentOrders } from './groceryStore';
 
 // In-memory cache: normalized text → estimate result
 const cache = new Map();
@@ -23,6 +25,32 @@ function normalizeText(text) {
  * App expects: { food, calories, quantity, unit, calculation, source, sourceUrl,
  *                baseServing, itemConfidence, confidenceNote }
  */
+/**
+ * Get recent grocery items for context (last 2 weeks).
+ * Returns array of unique item names.
+ */
+function getRecentGroceryItems() {
+  try {
+    const twoWeeksAgo = new Date();
+    twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
+
+    const orders = getRecentOrders(20); // Get plenty of orders
+    const recentItems = [];
+
+    for (const order of orders) {
+      if (new Date(order.date) >= twoWeeksAgo) {
+        recentItems.push(...(order.items || []));
+      }
+    }
+
+    // Dedupe and return (limit to 50 items to keep prompt reasonable)
+    return [...new Set(recentItems)].slice(0, 50);
+  } catch (err) {
+    console.warn('[AICalorie] Failed to get grocery context:', err.message);
+    return [];
+  }
+}
+
 function transformAIResponse(aiResult) {
   const items = (aiResult.items || []).map(item => {
     const calPerUnit = item.caloriesPerUnit || Math.round(item.totalCalories / (item.quantity || 1));
@@ -66,6 +94,10 @@ function transformAIResponse(aiResult) {
     confidence: overallConfidence,
     matchedFoods: items.length,
     isAI: true,
+    // Clarification fields (if AI needs user input)
+    needsClarification: aiResult.needsClarification || false,
+    clarificationQuestion: aiResult.clarificationQuestion || null,
+    clarificationOptions: aiResult.clarificationOptions || null,
   };
 }
 
@@ -88,10 +120,16 @@ export async function estimateCaloriesAI(text) {
   }
 
   try {
+    // Get recent grocery items for context
+    const recentGroceries = getRecentGroceryItems();
+
     const res = await fetch('/api/estimate-calories', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: text.trim() }),
+      body: JSON.stringify({
+        text: text.trim(),
+        recentGroceries: recentGroceries.length > 0 ? recentGroceries : undefined,
+      }),
     });
 
     if (!res.ok) {

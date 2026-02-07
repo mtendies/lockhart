@@ -1140,6 +1140,7 @@ function CaloriePopup({ estimate: fallbackEstimate, mealText, dayKey, mealId, on
   const [aiLoading, setAiLoading] = useState(false);
   const [activeEstimate, setActiveEstimate] = useState(fallbackEstimate);
   const [isAI, setIsAI] = useState(fallbackEstimate?.isAI || false);
+  const [clarificationDismissed, setClarificationDismissed] = useState(false);
 
   // Fetch AI estimate on mount
   useEffect(() => {
@@ -1355,6 +1356,39 @@ function CaloriePopup({ estimate: fallbackEstimate, mealText, dayKey, mealId, on
             <div className="text-center py-4">
               <p className="text-sm text-gray-500">No specific foods detected</p>
               <p className="text-xs text-gray-400 mt-1">Try being more specific with food names</p>
+            </div>
+          )}
+
+          {/* Clarification prompt (if AI needs user input) */}
+          {activeEstimate.needsClarification && !clarificationDismissed && activeEstimate.clarificationQuestion && (
+            <div className="mt-4 p-3 bg-blue-50 rounded-xl border border-blue-200">
+              <div className="flex items-start justify-between gap-2 mb-2">
+                <p className="text-sm font-medium text-blue-800">{activeEstimate.clarificationQuestion}</p>
+                <button
+                  onClick={() => setClarificationDismissed(true)}
+                  className="text-blue-400 hover:text-blue-600 flex-shrink-0"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+              {activeEstimate.clarificationOptions && activeEstimate.clarificationOptions.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {activeEstimate.clarificationOptions.map((option, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => {
+                        // For now, just dismiss — user can manually adjust items
+                        // Future: could re-estimate with the selected option
+                        setClarificationDismissed(true);
+                      }}
+                      className="px-2 py-1 text-xs bg-white border border-blue-200 rounded-lg text-blue-700 hover:bg-blue-100 transition-colors"
+                    >
+                      {option}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <p className="text-xs text-blue-500 mt-2">You can also adjust quantities above if needed.</p>
             </div>
           )}
 
