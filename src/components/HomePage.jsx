@@ -3275,6 +3275,13 @@ export default function HomePage({ onNavigate, onOpenCheckIn, syncStatus, onRefr
 
   // Check if in calibration period
   const inCalibration = isInCalibrationPeriod() && !isCalibrationComplete();
+  const calibrationJustCompleted = isCalibrationComplete();
+  const [showCompletionBanner, setShowCompletionBanner] = useState(() => {
+    // Show banner if calibration is complete but user hasn't dismissed it yet
+    if (!calibrationJustCompleted) return false;
+    const dismissed = localStorage.getItem('health-advisor-calibration-banner-dismissed');
+    return !dismissed;
+  });
 
   // Load profile on mount and when sync status changes to ready
   useEffect(() => {
@@ -3390,6 +3397,46 @@ export default function HomePage({ onNavigate, onOpenCheckIn, syncStatus, onRefr
         {inCalibration && (
           <section>
             <NutritionCalibrationCard />
+          </section>
+        )}
+
+        {/* 2b. Calibration Complete Banner */}
+        {showCompletionBanner && (
+          <section>
+            <div className="bg-gradient-to-br from-emerald-50 to-green-50 rounded-2xl border border-emerald-200 p-5 relative">
+              <button
+                onClick={() => {
+                  setShowCompletionBanner(false);
+                  localStorage.setItem('health-advisor-calibration-banner-dismissed', 'true');
+                }}
+                className="absolute top-3 right-3 p-1 text-emerald-400 hover:text-emerald-600 hover:bg-emerald-100 rounded-lg transition-colors"
+              >
+                <X size={16} />
+              </button>
+              <div className="flex items-start gap-4">
+                <div className="p-3 bg-emerald-100 rounded-xl">
+                  <Trophy size={24} className="text-emerald-600" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="font-semibold text-emerald-800 text-lg">Nutrition Profile Unlocked!</h3>
+                  <p className="text-emerald-600 text-sm mt-1">
+                    Great job completing 5 days of meal tracking. Your personalized nutrition insights are ready!
+                  </p>
+                  <button
+                    onClick={() => {
+                      setShowCompletionBanner(false);
+                      localStorage.setItem('health-advisor-calibration-banner-dismissed', 'true');
+                      // Navigate to Nutrition page
+                      window.location.href = '/nutrition';
+                    }}
+                    className="mt-3 inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white text-sm font-medium rounded-xl hover:bg-emerald-700 transition-colors"
+                  >
+                    View Your Nutrition Profile
+                    <ChevronRight size={16} />
+                  </button>
+                </div>
+              </div>
+            </div>
           </section>
         )}
 

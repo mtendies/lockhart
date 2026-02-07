@@ -290,7 +290,7 @@ export function generateRationale(type, profile) {
   if (profile?.activityLevel) {
     parts.push(`activity: ${profile.activityLevel}`);
   }
-  if (profile?.goals?.length) {
+  if (profile?.goals && Array.isArray(profile.goals) && profile.goals.length) {
     parts.push(`goals: ${profile.goals.join(', ')}`);
   }
 
@@ -298,7 +298,7 @@ export function generateRationale(type, profile) {
 
   switch (type) {
     case 'protein':
-      if (profile?.goals?.some(g => g.toLowerCase().includes('muscle'))) {
+      if (Array.isArray(profile?.goals) && profile.goals.some(g => g.toLowerCase().includes('muscle'))) {
         return {
           rationale: `Based on your goal of building muscle and your current weight, you need higher protein intake than the general RDA. Research shows 1.6-2.2g per kg body weight optimizes muscle protein synthesis for resistance-trained individuals.`,
           profileContext,
