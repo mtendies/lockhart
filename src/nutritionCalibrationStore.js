@@ -386,6 +386,22 @@ export function getCalibrationData() {
         }
       }
 
+      // Repair days that have enough meals but aren't marked completed
+      // This fixes data where UI showed "Complete" but flag wasn't set
+      for (const day of CALIBRATION_DAYS) {
+        const dayData = data.days[day];
+        if (dayData && !dayData.completed) {
+          // Check if day has 2+ meals with content (same as canCompleteDay logic)
+          const filledMeals = (dayData.meals || []).filter(m => m.content && m.content.trim()).length;
+          if (filledMeals >= 2) {
+            console.warn(`[NutritionCalibration] Repairing incomplete flag for ${day} (has ${filledMeals} meals)`);
+            dayData.completed = true;
+            dayData.completedAt = dayData.completedAt || new Date().toISOString();
+            repaired = true;
+          }
+        }
+      }
+
       // If all 5 days are now completed but completedAt wasn't set, fix it
       if (!data.completedAt) {
         const allComplete = CALIBRATION_DAYS.every(d => data.days[d]?.completed);
