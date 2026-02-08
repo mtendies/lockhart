@@ -41,7 +41,8 @@
       "Bash(node debug-supabase.mjs:*)",
       "Bash(node debug-auth.mjs:*)",
       "Bash(xxd:*)",
-      "Bash(git status:*)"
+      "Bash(git status:*)",
+      "Bash(vercel ls:*)"
     ]
   }
 }

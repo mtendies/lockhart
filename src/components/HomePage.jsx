@@ -2725,6 +2725,72 @@ function NutritionProfileCard({ onNavigate }) {
   );
 }
 
+// Helper to get the next logical meal based on time of day
+function getNextMealType() {
+  const hour = new Date().getHours();
+  if (hour < 10) return 'breakfast';
+  if (hour < 14) return 'lunch';
+  if (hour < 17) return 'snack';
+  return 'dinner';
+}
+
+// Helper to parse meal type from input text
+function parseMealInput(input) {
+  const text = input.trim();
+
+  // Common patterns: "breakfast - eggs", "breakfast: eggs", "breakfast, eggs", "breakfast eggs"
+  const mealTypes = ['breakfast', 'lunch', 'dinner', 'snack', 'snacks', 'dessert', 'brunch'];
+  const patterns = [
+    /^(breakfast|lunch|dinner|snack|snacks|dessert|brunch)\s*[-:,]\s*(.+)$/i,
+    /^(breakfast|lunch|dinner|snack|snacks|dessert|brunch)\s+(.+)$/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match) {
+      let type = match[1].toLowerCase();
+      if (type === 'snacks') type = 'snack';
+      return {
+        type,
+        label: type.charAt(0).toUpperCase() + type.slice(1),
+        content: match[2].trim(),
+      };
+    }
+  }
+
+  // Check if input starts with a meal type word
+  const lowerText = text.toLowerCase();
+  for (const mealType of mealTypes) {
+    if (lowerText.startsWith(mealType + ' ')) {
+      let type = mealType;
+      if (type === 'snacks') type = 'snack';
+      return {
+        type,
+        label: type.charAt(0).toUpperCase() + type.slice(1),
+        content: text.slice(mealType.length).trim(),
+      };
+    }
+  }
+
+  // No meal type found - use time-based default
+  const defaultType = getNextMealType();
+  return {
+    type: defaultType,
+    label: defaultType.charAt(0).toUpperCase() + defaultType.slice(1),
+    content: text,
+  };
+}
+
+// Meal type icons
+const MEAL_ICONS = {
+  breakfast: '🌅',
+  lunch: '☀️',
+  dinner: '🌙',
+  snack: '🍎',
+  dessert: '🍰',
+  brunch: '🥂',
+};
+
 // Today's Meals Tracker Card - Simplified ongoing tracking
 function TodaysMealsCard() {
   const [meals, setMeals] = useState([]);
@@ -2811,13 +2877,16 @@ function TodaysMealsCard() {
 
     setIsAdding(true);
     try {
-      // Estimate calories with AI/rules
-      const estimate = await getCachedOrRuleBased(inputValue, profile);
+      // Parse meal type and content from input
+      const { type, label, content } = parseMealInput(inputValue);
 
-      const newMeal = addTodayMeal({
-        type: 'meal',
-        label: 'Meal',
-        content: inputValue,
+      // Estimate calories with AI/rules (use just the food content, not the meal type prefix)
+      const estimate = await getCachedOrRuleBased(content, profile);
+
+      addTodayMeal({
+        type,
+        label,
+        content,
         calories: estimate?.total || null,
         calorieItems: estimate?.items || [],
       });
@@ -2836,6 +2905,9 @@ function TodaysMealsCard() {
     setMeals(getTodayMeals());
   }
 
+  // Get the next suggested meal type for placeholder
+  const nextMeal = getNextMealType();
+
   return (
     <div className="bg-white rounded-2xl border border-gray-200 p-5">
       <div className="flex items-center justify-between mb-4">
@@ -2845,7 +2917,7 @@ function TodaysMealsCard() {
           </div>
           <span className="font-semibold text-gray-900">Today's Meals</span>
         </div>
-        <div className="text-sm text-gray-500">
+        <div className="text-sm font-medium text-emerald-600">
           {totalCalories} / {calorieTarget} cal
         </div>
       </div>
@@ -2862,7 +2934,7 @@ function TodaysMealsCard() {
         </div>
         <div className="flex justify-between text-xs text-gray-500 mt-1">
           <span>{percentage}% of daily target</span>
-          <span>{remaining > 0 ? `${remaining} cal remaining` : `${-remaining} cal over`}</span>
+          <span>{remaining > 0 ? `${remaining} cal remaining` : `${Math.abs(remaining)} cal over`}</span>
         </div>
       </div>
 
@@ -2872,17 +2944,23 @@ function TodaysMealsCard() {
           {meals.map(meal => (
             <div
               key={meal.id}
-              className="flex items-center justify-between p-2 bg-gray-50 rounded-lg"
+              className="flex items-start justify-between p-3 bg-gray-50 rounded-lg"
             >
-              <div className="flex-1 min-w-0">
-                <p className="text-sm text-gray-800 truncate">{meal.content}</p>
-                {meal.calories && (
-                  <p className="text-xs text-gray-500">{meal.calories} cal</p>
-                )}
+              <div className="flex items-start gap-2 flex-1 min-w-0">
+                <span className="text-lg flex-shrink-0">{MEAL_ICONS[meal.type] || '🍽️'}</span>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-medium text-gray-500 uppercase">{meal.label}</span>
+                    {meal.calories && (
+                      <span className="text-xs text-emerald-600 font-medium">{meal.calories} cal</span>
+                    )}
+                  </div>
+                  <p className="text-sm text-gray-800 mt-0.5">{meal.content}</p>
+                </div>
               </div>
               <button
                 onClick={() => handleRemoveMeal(meal.id)}
-                className="p-1 text-gray-400 hover:text-red-500"
+                className="p-1 text-gray-400 hover:text-red-500 flex-shrink-0"
               >
                 <X size={14} />
               </button>
@@ -2891,6 +2969,11 @@ function TodaysMealsCard() {
         </div>
       )}
 
+      {/* Instruction Text */}
+      <p className="text-xs text-gray-500 mb-2">
+        Tell me the meal type and what you ate (e.g., "breakfast - 3 eggs and toast" or "lunch: big salad with chicken")
+      </p>
+
       {/* Quick Add Input */}
       <div className="flex gap-2">
         <input
@@ -2898,7 +2981,7 @@ function TodaysMealsCard() {
           value={inputValue}
           onChange={e => setInputValue(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && handleAddMeal()}
-          placeholder="What did you eat? (e.g., 2 eggs, toast)"
+          placeholder={`${nextMeal} - what did you eat?`}
           className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
           disabled={isAdding}
         />
@@ -3755,27 +3838,27 @@ export default function HomePage({ onNavigate, onOpenCheckIn, syncStatus, onRefr
           </section>
         )}
 
-        {/* 2c. Nutrition Profile Summary (after calibration complete) - Orange */}
-        <section>
-          <NutritionProfileCard onNavigate={onNavigate} />
-        </section>
-
-        {/* 2d. Today's Meals Tracker (ongoing tracking after calibration) - Emerald */}
+        {/* 2c. Today's Meals Tracker (post-calibration) - Emerald */}
         <section>
           <TodaysMealsCard />
         </section>
 
-        {/* 3. Your Playbook card - Indigo */}
-        <section>
-          <PlaybookLinkCard onViewPlaybook={() => setShowPlaybook(true)} />
-        </section>
-
-        {/* 4. Focus Goals - Green, minimal, no buttons */}
+        {/* 3. Focus Goals - Green, minimal, no buttons */}
         <section>
           <FocusGoalsCard />
         </section>
 
-        {/* 5. Key Principles - Blue (collapsed) */}
+        {/* 4. Your Playbook card - Indigo */}
+        <section>
+          <PlaybookLinkCard onViewPlaybook={() => setShowPlaybook(true)} />
+        </section>
+
+        {/* 5. Nutrition Profile Summary (after calibration complete) - Orange */}
+        <section>
+          <NutritionProfileCard onNavigate={onNavigate} />
+        </section>
+
+        {/* 6. Key Principles - Blue (collapsed) */}
         <section>
           <KeyPrinciplesCard
             expanded={expandedSections.principles}
@@ -3783,7 +3866,7 @@ export default function HomePage({ onNavigate, onOpenCheckIn, syncStatus, onRefr
           />
         </section>
 
-        {/* 6. Weekly Wins - Gold (collapsed, LAST) */}
+        {/* 7. Weekly Wins - Gold (collapsed, LAST) */}
         <section>
           <WeeklyWinsCard
             expanded={expandedSections.wins}
@@ -3791,7 +3874,7 @@ export default function HomePage({ onNavigate, onOpenCheckIn, syncStatus, onRefr
           />
         </section>
 
-        {/* 7. Check-in Banner (Sundays only) */}
+        {/* 8. Check-in Banner (Sundays only) */}
         <section>
           <CheckInBanner onStartCheckIn={handleStartCheckIn} />
         </section>
