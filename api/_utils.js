@@ -1,6 +1,6 @@
 // Shared utilities for API routes
 
-export function buildSystemPrompt(profile, notes, checkIns, playbook, pendingSuggestions, groceryData, activityLogs, nutritionProfile, nutritionCalibration, learnedInsights) {
+export function buildSystemPrompt(profile, notes, checkIns, playbook, pendingSuggestions, groceryData, activityLogs, nutritionProfile, nutritionCalibration, learnedInsights, focusGoals = [], todaysNutrition = null) {
   const sections = [];
 
   sections.push(`You are a knowledgeable health and fitness advisor—think of yourself as a well-informed friend who happens to know a lot about nutrition, exercise, and wellness. You know this user well from their profile below.
@@ -150,6 +150,47 @@ confidence: explicit|inferred
 - Single meal mentions
 
 **When you log an insight, acknowledge it in your response:** "Good to know about the allergy shots—I'll keep that in mind for my recommendations."`);
+
+  sections.push(`## Modifying Focus Goals
+You CAN and SHOULD modify the user's weekly focus goals when they ask. This includes:
+- Changing the target number (e.g., "change my weigh-in goal from 7 to 3 times per week")
+- Updating the goal text
+- Removing goals they no longer want
+- Adding new goals (max 3-4 per week)
+- Marking goals as complete
+
+**Format (place at END of response, before citations):**
+[[GOAL_UPDATE]]
+action: update|add|remove|complete
+goalId: goal_xxx (required for update/remove/complete - get from the focus goals list)
+text: "New goal text" (for add or update)
+target: 3 (for add or update)
+unit: times|days (for add or update)
+[[/GOAL_UPDATE]]
+
+**Examples:**
+User: "Change my weigh-in goal to 3 times per week"
+→ [[GOAL_UPDATE]]
+action: update
+goalId: goal_1234567890_abc
+target: 3
+[[/GOAL_UPDATE]]
+
+User: "Remove the meditation goal"
+→ [[GOAL_UPDATE]]
+action: remove
+goalId: goal_1234567890_def
+[[/GOAL_UPDATE]]
+
+User: "Add a goal to drink 8 glasses of water daily"
+→ [[GOAL_UPDATE]]
+action: add
+text: "Drink 8 glasses of water"
+target: 7
+unit: days
+[[/GOAL_UPDATE]]
+
+**After applying a goal update, confirm the change:** "Done! I've updated your weigh-in goal from 7 to 3 times per week."`);
 
   if (profile.name || profile.age || profile.sex || profile.height || profile.weight) {
     const parts = [];
@@ -579,6 +620,37 @@ confidence: explicit|inferred
     }
 
     sections.push(calParts.join('\n'));
+  }
+
+  // Add focus goals section
+  if (focusGoals && focusGoals.length > 0) {
+    const focusParts = [];
+    focusParts.push('## This Week\'s Focus Goals');
+    focusParts.push('These are the user\'s specific, trackable goals for this week. You can update these when the user asks.\n');
+
+    focusGoals.forEach(goal => {
+      const progress = goal.current || 0;
+      const target = goal.target || 1;
+      const pct = Math.round((progress / target) * 100);
+      const status = goal.status === 'completed' ? '✓ Complete' :
+                     goal.status === 'carried' ? '→ Carried over' :
+                     `${progress}/${target} (${pct}%)`;
+      focusParts.push(`- [${goal.id}] "${goal.text}" - Target: ${target} ${goal.unit || 'times'}/week - Progress: ${status}`);
+    });
+
+    focusParts.push('\n**You CAN modify these goals when the user asks.** Use the GOAL_UPDATE format below.');
+    sections.push(focusParts.join('\n'));
+  }
+
+  // Add today's nutrition if available
+  if (todaysNutrition && (todaysNutrition.meals?.length > 0 || todaysNutrition.consumed > 0)) {
+    const nutritionParts = [];
+    nutritionParts.push('## Today\'s Nutrition');
+    nutritionParts.push(`Calories consumed: ${todaysNutrition.consumed || 0} / ${todaysNutrition.target || 2000} target`);
+    if (todaysNutrition.meals && todaysNutrition.meals.length > 0) {
+      nutritionParts.push(`Meals logged: ${todaysNutrition.meals.length}`);
+    }
+    sections.push(nutritionParts.join('\n'));
   }
 
   return sections.join('\n\n');

@@ -1122,3 +1122,167 @@ export function resetCalibration() {
   removeItem(PROFILE_KEY);
   removeItem(MEAL_PATTERN_KEY);
 }
+
+// ============================================
+// ONGOING MEAL TRACKING (Post-Calibration)
+// ============================================
+
+const ONGOING_MEALS_KEY = 'health-advisor-ongoing-meals';
+
+/**
+ * Get ongoing meals data structure
+ */
+function getOngoingMealsData() {
+  try {
+    const data = getItem(ONGOING_MEALS_KEY);
+    return data ? JSON.parse(data) : {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Save ongoing meals data
+ */
+function saveOngoingMealsData(data) {
+  setItem(ONGOING_MEALS_KEY, JSON.stringify(data));
+  syncNutrition();
+}
+
+/**
+ * Get today's date key
+ */
+function getTodayDateKey() {
+  return new Date().toISOString().split('T')[0];
+}
+
+/**
+ * Get today's meals for ongoing tracking
+ */
+export function getTodayMeals() {
+  const data = getOngoingMealsData();
+  const today = getTodayDateKey();
+  return data[today]?.meals || [];
+}
+
+/**
+ * Add a meal to today's ongoing tracking
+ */
+export function addTodayMeal(meal) {
+  const data = getOngoingMealsData();
+  const today = getTodayDateKey();
+
+  if (!data[today]) {
+    data[today] = { meals: [], updatedAt: null };
+  }
+
+  const newMeal = {
+    id: `meal_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+    type: meal.type || 'meal',
+    label: meal.label || MEAL_LABELS[meal.type] || 'Meal',
+    content: meal.content || '',
+    calories: meal.calories || null,
+    calorieItems: meal.calorieItems || [],
+    timestamp: new Date().toISOString(),
+  };
+
+  data[today].meals.push(newMeal);
+  data[today].updatedAt = new Date().toISOString();
+
+  saveOngoingMealsData(data);
+
+  // Log as activity
+  if (newMeal.content) {
+    logActivity({
+      type: ACTIVITY_TYPES.NUTRITION,
+      rawText: newMeal.content,
+      summary: `${newMeal.label}: ${newMeal.content.slice(0, 50)}${newMeal.content.length > 50 ? '...' : ''}`,
+      data: {
+        mealType: newMeal.type,
+        calories: newMeal.calories,
+        ongoing: true,
+      },
+    });
+  }
+
+  return newMeal;
+}
+
+/**
+ * Update a meal in today's ongoing tracking
+ */
+export function updateTodayMeal(mealId, updates) {
+  const data = getOngoingMealsData();
+  const today = getTodayDateKey();
+
+  if (!data[today]?.meals) return null;
+
+  const mealIndex = data[today].meals.findIndex(m => m.id === mealId);
+  if (mealIndex === -1) return null;
+
+  data[today].meals[mealIndex] = {
+    ...data[today].meals[mealIndex],
+    ...updates,
+  };
+  data[today].updatedAt = new Date().toISOString();
+
+  saveOngoingMealsData(data);
+  return data[today].meals[mealIndex];
+}
+
+/**
+ * Remove a meal from today's ongoing tracking
+ */
+export function removeTodayMeal(mealId) {
+  const data = getOngoingMealsData();
+  const today = getTodayDateKey();
+
+  if (!data[today]?.meals) return false;
+
+  data[today].meals = data[today].meals.filter(m => m.id !== mealId);
+  data[today].updatedAt = new Date().toISOString();
+
+  saveOngoingMealsData(data);
+  return true;
+}
+
+/**
+ * Get today's calorie total from ongoing tracking
+ */
+export function getTodayCalorieTotal() {
+  const meals = getTodayMeals();
+  return meals.reduce((sum, meal) => sum + (meal.calories || 0), 0);
+}
+
+/**
+ * Check if ongoing meal tracking is enabled
+ */
+export function isOngoingTrackingEnabled() {
+  const mode = getTrackingMode();
+  return mode === TRACKING_MODES.DETAILED || mode === TRACKING_MODES.JOURNAL;
+}
+
+/**
+ * Get recent days' meals for history view
+ */
+export function getRecentMealsHistory(days = 7) {
+  const data = getOngoingMealsData();
+  const history = [];
+  const today = new Date();
+
+  for (let i = 0; i < days; i++) {
+    const date = new Date(today);
+    date.setDate(date.getDate() - i);
+    const dateKey = date.toISOString().split('T')[0];
+
+    if (data[dateKey]?.meals?.length > 0) {
+      history.push({
+        date: dateKey,
+        meals: data[dateKey].meals,
+        totalCalories: data[dateKey].meals.reduce((sum, m) => sum + (m.calories || 0), 0),
+      });
+    }
+  }
+
+  return history;
+}

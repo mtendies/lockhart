@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { hasGoal } from '../profileHelpers';
 import { Send, Menu, Search, Check, X, Sparkles, MessageCircle, Activity } from 'lucide-react';
+import { getGoals, updateGoal, addGoal, removeGoal, incrementGoal } from '../focusGoalStore';
+import { parseGoalUpdates, stripGoalUpdateBlocks } from '../goalUpdateParser';
 import { extractNotes, stripNotes } from '../noteParser';
 import { addNote, getNotes } from '../notesStore';
 import { addBookmark } from '../bookmarkStore';
@@ -774,6 +776,7 @@ export default function Chat({
           nutritionCalibration: !isCalibrationComplete() ? getCalibrationProgress() : null,
           learnedInsights: getLearnedInsights(),
           todaysNutrition, // Include today's calorie data
+          focusGoals: getGoals(), // Include current week's focus goals
         }),
       });
 
@@ -864,7 +867,48 @@ export default function Chat({
         }
       }
 
-      let finalText = stripNotes(textWithoutInsights);
+      // Parse and apply goal updates
+      const { cleanText: textWithoutGoalUpdates, goalUpdates } = parseGoalUpdates(textWithoutInsights);
+
+      // Apply each goal update
+      for (const goalUpdate of goalUpdates) {
+        try {
+          switch (goalUpdate.action) {
+            case 'update':
+              // Update existing goal
+              const updates = {};
+              if (goalUpdate.text) updates.text = goalUpdate.text;
+              if (goalUpdate.target) updates.target = goalUpdate.target;
+              if (goalUpdate.unit) updates.unit = goalUpdate.unit;
+              updateGoal(goalUpdate.goalId, updates);
+              break;
+            case 'add':
+              // Add new goal
+              addGoal({
+                text: goalUpdate.text,
+                target: goalUpdate.target || 1,
+                unit: goalUpdate.unit || 'times',
+                type: goalUpdate.type || 'one-time',
+              });
+              break;
+            case 'remove':
+              removeGoal(goalUpdate.goalId);
+              break;
+            case 'complete':
+              // Mark goal as complete by setting current to target
+              const goals = getGoals();
+              const goal = goals.find(g => g.id === goalUpdate.goalId);
+              if (goal) {
+                updateGoal(goalUpdate.goalId, { current: goal.target, status: 'completed' });
+              }
+              break;
+          }
+        } catch (err) {
+          console.error('Failed to apply goal update:', err, goalUpdate);
+        }
+      }
+
+      let finalText = stripNotes(textWithoutGoalUpdates);
 
       // Update with final clean text
       const finalMessages = [...updated, { role: 'assistant', content: finalText }];

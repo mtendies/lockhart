@@ -226,6 +226,15 @@ import {
   ALL_MEAL_TYPES,
   getDefaultMealPattern,
   saveDefaultMealPattern,
+  getNutritionProfile,
+  addTodayMeal,
+  getTodayMeals,
+  updateTodayMeal,
+  removeTodayMeal,
+  TRACKING_MODES,
+  getTrackingMode,
+  setTrackingMode,
+  isOngoingTrackingEnabled,
 } from '../nutritionCalibrationStore';
 import { getCurrentWeekCheckIn } from '../checkInStore';
 import { getProfile } from '../store';
@@ -2607,6 +2616,310 @@ function KeyPrinciplesCard({ expanded, onToggle }) {
   );
 }
 
+// Nutrition Profile Summary Card - Orange/Amber accent
+function NutritionProfileCard({ onNavigate }) {
+  const [profile, setProfile] = useState(null);
+  const [expanded, setExpanded] = useState(false);
+  const userProfile = getProfile();
+
+  useEffect(() => {
+    if (isCalibrationComplete()) {
+      setProfile(getNutritionProfile());
+    }
+  }, []);
+
+  // Only show if calibration is complete
+  if (!isCalibrationComplete() || !profile) return null;
+
+  const overview = profile.overview || {};
+
+  return (
+    <div className="bg-gradient-to-br from-orange-50 to-amber-50 rounded-2xl border border-orange-200 p-5">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <div className="p-2 bg-orange-100 rounded-xl">
+            <Flame size={18} className="text-orange-600" />
+          </div>
+          <span className="font-semibold text-gray-900">Your Nutrition Profile</span>
+        </div>
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="p-1 text-gray-400 hover:text-gray-600 rounded"
+        >
+          {expanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+        </button>
+      </div>
+
+      {/* Quick Stats */}
+      <div className="grid grid-cols-4 gap-2 mb-3">
+        <div className="bg-white/60 rounded-lg p-2 text-center">
+          <div className="text-sm font-bold text-orange-700">{overview.estimatedDailyCalories || '~2,000'}</div>
+          <div className="text-xs text-gray-500">Calories</div>
+        </div>
+        <div className="bg-white/60 rounded-lg p-2 text-center">
+          <div className="text-sm font-bold text-orange-700">{overview.proteinEstimate || '~80g'}</div>
+          <div className="text-xs text-gray-500">Protein</div>
+        </div>
+        <div className="bg-white/60 rounded-lg p-2 text-center">
+          <div className="text-sm font-bold text-orange-700">{overview.carbEstimate || '~250g'}</div>
+          <div className="text-xs text-gray-500">Carbs</div>
+        </div>
+        <div className="bg-white/60 rounded-lg p-2 text-center">
+          <div className="text-sm font-bold text-orange-700">{overview.fatEstimate || '~70g'}</div>
+          <div className="text-xs text-gray-500">Fats</div>
+        </div>
+      </div>
+
+      {/* Expanded Details */}
+      {expanded && (
+        <div className="space-y-3 pt-3 border-t border-orange-200">
+          {profile.strengths?.length > 0 && (
+            <div>
+              <div className="text-xs font-medium text-gray-500 uppercase mb-1">Strengths</div>
+              <ul className="text-sm text-gray-700 space-y-1">
+                {profile.strengths.slice(0, 2).map((s, i) => (
+                  <li key={i} className="flex items-start gap-1">
+                    <Check size={14} className="text-green-500 mt-0.5 flex-shrink-0" />
+                    {s}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {profile.gaps?.length > 0 && (
+            <div>
+              <div className="text-xs font-medium text-gray-500 uppercase mb-1">Areas to Improve</div>
+              <ul className="text-sm text-gray-700 space-y-1">
+                {profile.gaps.slice(0, 2).map((g, i) => (
+                  <li key={i} className="flex items-start gap-1">
+                    <Target size={14} className="text-orange-500 mt-0.5 flex-shrink-0" />
+                    {g}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {profile.recommendations?.length > 0 && (
+            <div>
+              <div className="text-xs font-medium text-gray-500 uppercase mb-1">Top Recommendation</div>
+              <p className="text-sm text-gray-700 flex items-start gap-1">
+                <Sparkles size={14} className="text-amber-500 mt-0.5 flex-shrink-0" />
+                {profile.recommendations[0]}
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* View Full Profile Button */}
+      <button
+        onClick={() => onNavigate?.('nutrition')}
+        className="mt-3 w-full flex items-center justify-center gap-2 px-4 py-2 bg-orange-100 text-orange-700 text-sm font-medium rounded-lg hover:bg-orange-200 transition-colors"
+      >
+        View Full Profile
+        <ChevronRight size={16} />
+      </button>
+    </div>
+  );
+}
+
+// Today's Meals Tracker Card - Simplified ongoing tracking
+function TodaysMealsCard() {
+  const [meals, setMeals] = useState([]);
+  const [inputValue, setInputValue] = useState('');
+  const [isAdding, setIsAdding] = useState(false);
+  const [calorieTarget, setCalorieTarget] = useState(2000);
+  const [trackingEnabled, setTrackingEnabled] = useState(false);
+  const profile = getProfile();
+
+  useEffect(() => {
+    // Only show if calibration is complete
+    if (isCalibrationComplete()) {
+      const enabled = isOngoingTrackingEnabled();
+      setTrackingEnabled(enabled);
+
+      if (enabled) {
+        setMeals(getTodayMeals());
+      }
+
+      // Get calorie target from nutrition profile
+      const nutritionProfile = getNutritionProfile();
+      if (nutritionProfile?.overview?.estimatedDailyCalories) {
+        const cal = parseInt(nutritionProfile.overview.estimatedDailyCalories.replace(/[^0-9]/g, ''));
+        if (cal > 0) setCalorieTarget(cal);
+      }
+    }
+  }, []);
+
+  // Don't show if calibration not complete
+  if (!isCalibrationComplete()) return null;
+
+  // Check tracking mode directly
+  const trackingMode = getTrackingMode();
+
+  // If user explicitly paused, don't show the card
+  if (trackingMode === TRACKING_MODES.PAUSED) return null;
+
+  // If user hasn't chosen yet (null), show opt-in prompt
+  if (!trackingEnabled && trackingMode === null) {
+    return (
+      <div className="bg-white rounded-2xl border border-gray-200 p-5">
+        <div className="flex items-center gap-2 mb-3">
+          <div className="p-2 bg-emerald-100 rounded-xl">
+            <Utensils size={18} className="text-emerald-600" />
+          </div>
+          <span className="font-semibold text-gray-900">Continue Tracking Meals?</span>
+        </div>
+        <p className="text-sm text-gray-600 mb-4">
+          You've completed your nutrition calibration! Would you like to keep logging meals to track your daily calories?
+        </p>
+        <div className="flex gap-2">
+          <button
+            onClick={() => {
+              setTrackingMode(TRACKING_MODES.DETAILED);
+              setTrackingEnabled(true);
+              setMeals(getTodayMeals());
+            }}
+            className="flex-1 px-4 py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 transition-colors"
+          >
+            Yes, keep tracking
+          </button>
+          <button
+            onClick={() => {
+              setTrackingMode(TRACKING_MODES.PAUSED);
+            }}
+            className="px-4 py-2 bg-gray-100 text-gray-600 text-sm font-medium rounded-lg hover:bg-gray-200 transition-colors"
+          >
+            Maybe later
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // If tracking not enabled at this point, don't show
+  if (!trackingEnabled) return null;
+
+  const totalCalories = meals.reduce((sum, m) => sum + (m.calories || 0), 0);
+  const remaining = calorieTarget - totalCalories;
+  const percentage = Math.min(100, Math.round((totalCalories / calorieTarget) * 100));
+
+  async function handleAddMeal() {
+    if (!inputValue.trim()) return;
+
+    setIsAdding(true);
+    try {
+      // Estimate calories with AI/rules
+      const estimate = await getCachedOrRuleBased(inputValue, profile);
+
+      const newMeal = addTodayMeal({
+        type: 'meal',
+        label: 'Meal',
+        content: inputValue,
+        calories: estimate?.total || null,
+        calorieItems: estimate?.items || [],
+      });
+
+      setMeals(getTodayMeals());
+      setInputValue('');
+    } catch (err) {
+      console.error('Failed to add meal:', err);
+    } finally {
+      setIsAdding(false);
+    }
+  }
+
+  function handleRemoveMeal(mealId) {
+    removeTodayMeal(mealId);
+    setMeals(getTodayMeals());
+  }
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-200 p-5">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <div className="p-2 bg-emerald-100 rounded-xl">
+            <Utensils size={18} className="text-emerald-600" />
+          </div>
+          <span className="font-semibold text-gray-900">Today's Meals</span>
+        </div>
+        <div className="text-sm text-gray-500">
+          {totalCalories} / {calorieTarget} cal
+        </div>
+      </div>
+
+      {/* Progress Bar */}
+      <div className="mb-4">
+        <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+          <div
+            className={`h-full transition-all ${
+              percentage > 100 ? 'bg-red-400' : percentage > 80 ? 'bg-amber-400' : 'bg-emerald-400'
+            }`}
+            style={{ width: `${Math.min(percentage, 100)}%` }}
+          />
+        </div>
+        <div className="flex justify-between text-xs text-gray-500 mt-1">
+          <span>{percentage}% of daily target</span>
+          <span>{remaining > 0 ? `${remaining} cal remaining` : `${-remaining} cal over`}</span>
+        </div>
+      </div>
+
+      {/* Meal List */}
+      {meals.length > 0 && (
+        <div className="space-y-2 mb-4">
+          {meals.map(meal => (
+            <div
+              key={meal.id}
+              className="flex items-center justify-between p-2 bg-gray-50 rounded-lg"
+            >
+              <div className="flex-1 min-w-0">
+                <p className="text-sm text-gray-800 truncate">{meal.content}</p>
+                {meal.calories && (
+                  <p className="text-xs text-gray-500">{meal.calories} cal</p>
+                )}
+              </div>
+              <button
+                onClick={() => handleRemoveMeal(meal.id)}
+                className="p-1 text-gray-400 hover:text-red-500"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Quick Add Input */}
+      <div className="flex gap-2">
+        <input
+          type="text"
+          value={inputValue}
+          onChange={e => setInputValue(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && handleAddMeal()}
+          placeholder="What did you eat? (e.g., 2 eggs, toast)"
+          className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+          disabled={isAdding}
+        />
+        <button
+          onClick={handleAddMeal}
+          disabled={isAdding || !inputValue.trim()}
+          className="px-4 py-2 bg-emerald-600 text-white text-sm font-medium rounded-lg hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        >
+          {isAdding ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
+        </button>
+      </div>
+
+      {meals.length === 0 && (
+        <p className="text-center text-sm text-gray-400 mt-3">
+          No meals logged yet today. Start tracking!
+        </p>
+      )}
+    </div>
+  );
+}
+
 // Playbook Link Card - Indigo accent
 function PlaybookLinkCard({ onViewPlaybook }) {
   const [playbook, setPlaybook] = useState(null);
@@ -3441,6 +3754,16 @@ export default function HomePage({ onNavigate, onOpenCheckIn, syncStatus, onRefr
             </div>
           </section>
         )}
+
+        {/* 2c. Nutrition Profile Summary (after calibration complete) - Orange */}
+        <section>
+          <NutritionProfileCard onNavigate={onNavigate} />
+        </section>
+
+        {/* 2d. Today's Meals Tracker (ongoing tracking after calibration) - Emerald */}
+        <section>
+          <TodaysMealsCard />
+        </section>
 
         {/* 3. Your Playbook card - Indigo */}
         <section>

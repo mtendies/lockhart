@@ -11,7 +11,7 @@ export default async function handler(req, res) {
   }
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
-  const { messages, profile, notes, checkIns, playbook, pendingSuggestions, groceryData, activityLogs, nutritionProfile, nutritionCalibration, learnedInsights } = req.body;
+  const { messages, profile, notes, checkIns, playbook, pendingSuggestions, groceryData, activityLogs, nutritionProfile, nutritionCalibration, learnedInsights, focusGoals, todaysNutrition } = req.body;
 
   if (!messages || !Array.isArray(messages)) {
     return res.status(400).json({ error: 'messages array required' });
@@ -38,7 +38,7 @@ export default async function handler(req, res) {
   }
 
   const client = new Anthropic({ apiKey });
-  const systemPrompt = buildSystemPrompt(profile || {}, notes || {}, checkIns || [], playbook || null, pendingSuggestions || [], groceryData || null, activityLogs || [], nutritionProfile || null, nutritionCalibration || null, learnedInsights || []);
+  const systemPrompt = buildSystemPrompt(profile || {}, notes || {}, checkIns || [], playbook || null, pendingSuggestions || [], groceryData || null, activityLogs || [], nutritionProfile || null, nutritionCalibration || null, learnedInsights || [], focusGoals || [], todaysNutrition || null);
 
   try {
     const stream = await client.messages.stream({
