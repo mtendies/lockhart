@@ -165,8 +165,15 @@ confidence: explicit|inferred
     sections.push(`## Personal Stats\n${parts.join('\n')}`);
   }
 
-  if (profile.goals?.length > 0) {
-    const goalParts = profile.goals.map(g => {
+  // Safely convert goals to array (handles array, string, object, or undefined)
+  const goalsArray = Array.isArray(profile.goals)
+    ? profile.goals
+    : typeof profile.goals === 'string'
+      ? [profile.goals]
+      : [];
+
+  if (goalsArray.length > 0) {
+    const goalParts = goalsArray.map(g => {
       const detail = profile.goalDetails?.[g];
       return detail ? `- ${g}: ${detail}` : `- ${g}`;
     });

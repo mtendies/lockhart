@@ -45,10 +45,17 @@ Current Playbook:
 - Big Picture Summary: ${playbook.summary || 'None'}
 ` : '';
 
+  // Safely convert goals to array
+  const goalsArray = Array.isArray(profile?.goals)
+    ? profile.goals
+    : typeof profile?.goals === 'string'
+      ? [profile.goals]
+      : [];
+
   const profileContext = profile ? `
 Current Profile:
 - Weight: ${profile.weight || 'Not set'} lbs
-- Goals: ${(profile.goals || []).join(', ') || 'None'}
+- Goals: ${goalsArray.join(', ') || 'None'}
 - Preferences: ${profile.preferences || 'None'}
 ` : '';
 
@@ -61,7 +68,7 @@ Current Profile:
 
 User's input: "${text}"
 
-User's goals: ${(profile?.goals || []).join(', ') || 'General health'}
+User's goals: ${goalsArray.join(', ') || 'General health'}
 
 Current This Week's Focus:
 ${weeklyFocusContext}

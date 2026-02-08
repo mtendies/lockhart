@@ -114,7 +114,13 @@ export default async function handler(req, res) {
     }
 
     if (profile) {
-      const goals = profile.goals?.join(', ') || 'general fitness';
+      // Safely convert goals to array
+      const goalsArray = Array.isArray(profile.goals)
+        ? profile.goals
+        : typeof profile.goals === 'string'
+          ? [profile.goals]
+          : [];
+      const goals = goalsArray.join(', ') || 'general fitness';
       const preferences = profile.preferences || '';
       contextParts.push(`USER'S BIG PICTURE GOALS: ${goals}${preferences ? `\nPreferences/Notes: ${preferences}` : ''}`);
     }
