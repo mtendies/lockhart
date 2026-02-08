@@ -44,6 +44,7 @@ import { hasLoseFatGoal, hasBuildMuscleGoal, getGoalsArray } from '../profileHel
 import { getPlaybook } from '../playbookStore';
 import { logActivity, ACTIVITY_TYPES, ACTIVITY_SOURCES, WORKOUT_TYPES } from '../activityLogStore';
 import DeleteConfirmationModal from './DeleteConfirmationModal';
+import DailyNutritionTracker from './DailyNutritionTracker';
 
 /**
  * MET values for common exercises (Metabolic Equivalent of Task)
@@ -3838,10 +3839,12 @@ export default function HomePage({ onNavigate, onOpenCheckIn, syncStatus, onRefr
           </section>
         )}
 
-        {/* 2c. Today's Meals Tracker (post-calibration) - Emerald */}
-        <section>
-          <TodaysMealsCard />
-        </section>
+        {/* 2c. Daily Nutrition Tracker (post-calibration) - Full featured */}
+        {isCalibrationComplete() && (
+          <section>
+            <DailyNutritionTracker />
+          </section>
+        )}
 
         {/* 3. Focus Goals - Green, minimal, no buttons */}
         <section>
@@ -3851,11 +3854,6 @@ export default function HomePage({ onNavigate, onOpenCheckIn, syncStatus, onRefr
         {/* 4. Your Playbook card - Indigo */}
         <section>
           <PlaybookLinkCard onViewPlaybook={() => setShowPlaybook(true)} />
-        </section>
-
-        {/* 5. Nutrition Profile Summary (after calibration complete) - Orange */}
-        <section>
-          <NutritionProfileCard onNavigate={onNavigate} />
         </section>
 
         {/* 6. Key Principles - Blue (collapsed) */}

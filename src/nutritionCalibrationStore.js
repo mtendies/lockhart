@@ -1286,3 +1286,97 @@ export function getRecentMealsHistory(days = 7) {
 
   return history;
 }
+
+// ============================================
+// DAILY ANALYSIS STORAGE
+// ============================================
+
+const DAILY_ANALYSIS_KEY = 'health-advisor-daily-analysis';
+
+/**
+ * Get daily analysis data structure
+ */
+function getDailyAnalysisData() {
+  try {
+    const data = getItem(DAILY_ANALYSIS_KEY);
+    return data ? JSON.parse(data) : {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Save daily analysis data
+ */
+function saveDailyAnalysisData(data) {
+  setItem(DAILY_ANALYSIS_KEY, JSON.stringify(data));
+  syncNutrition();
+}
+
+/**
+ * Save today's nutrition analysis
+ */
+export function saveDailyAnalysis(analysis) {
+  const data = getDailyAnalysisData();
+  const today = new Date().toISOString().split('T')[0];
+
+  data[today] = {
+    analysis,
+    savedAt: new Date().toISOString(),
+  };
+
+  // Keep only last 30 days of analysis
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - 30);
+  const cutoffKey = cutoff.toISOString().split('T')[0];
+
+  for (const key of Object.keys(data)) {
+    if (key < cutoffKey) {
+      delete data[key];
+    }
+  }
+
+  saveDailyAnalysisData(data);
+  return data[today];
+}
+
+/**
+ * Get today's analysis if it exists
+ */
+export function getTodayAnalysis() {
+  const data = getDailyAnalysisData();
+  const today = new Date().toISOString().split('T')[0];
+  return data[today]?.analysis || null;
+}
+
+/**
+ * Get analysis for a specific date
+ */
+export function getAnalysisForDate(dateKey) {
+  const data = getDailyAnalysisData();
+  return data[dateKey]?.analysis || null;
+}
+
+/**
+ * Get analysis history (last N days)
+ */
+export function getAnalysisHistory(days = 7) {
+  const data = getDailyAnalysisData();
+  const history = [];
+  const today = new Date();
+
+  for (let i = 0; i < days; i++) {
+    const date = new Date(today);
+    date.setDate(date.getDate() - i);
+    const dateKey = date.toISOString().split('T')[0];
+
+    if (data[dateKey]) {
+      history.push({
+        date: dateKey,
+        ...data[dateKey],
+      });
+    }
+  }
+
+  return history;
+}
