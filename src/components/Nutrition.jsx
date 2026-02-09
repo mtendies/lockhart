@@ -172,10 +172,10 @@ export default function Nutrition({ profile, playbook, onGroceryDataChange, onPl
         reader.readAsDataURL(file);
       });
 
-      const res = await fetch('/api/parse-grocery', {
+      const res = await fetch('/api/grocery', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fileData, fileType: file.type, source: selectedSource }),
+        body: JSON.stringify({ action: 'parse', fileData, fileType: file.type, source: selectedSource }),
       });
 
       if (!res.ok) throw new Error(`Server error: ${res.status}`);
@@ -316,10 +316,11 @@ export default function Nutrition({ profile, playbook, onGroceryDataChange, onPl
     setAnalyzing(true);
     try {
       // Step 1: Analyze grocery patterns
-      const res = await fetch('/api/analyze-groceries', {
+      const res = await fetch('/api/grocery', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          action: 'analyze',
           groceryData: data,
           profile,
           playbook,
