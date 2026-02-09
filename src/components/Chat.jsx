@@ -764,7 +764,8 @@ export default function Chat({
         headers: { 'Content-Type': 'application/json' },
         signal: controller.signal,
         body: JSON.stringify({
-          messages: updated,
+          // FIX C1: Limit to last 50 messages to prevent token limit issues
+          messages: updated.slice(-50),
           profile,
           notes: getNotes(),
           checkIns: getRecentCheckIns(8),

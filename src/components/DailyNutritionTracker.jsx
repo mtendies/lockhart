@@ -181,7 +181,7 @@ function MealSlot({ slot, meal, onAdd, onUpdate, onRemove, disabled }) {
         type: slot.type,
         label: slot.label,
         content: inputValue,
-        calories: estimate?.total || null,
+        calories: estimate?.totalCalories || null,
         calorieItems: estimate?.items || [],
       });
       setInputValue('');
@@ -201,7 +201,7 @@ function MealSlot({ slot, meal, onAdd, onUpdate, onRemove, disabled }) {
       const estimate = await getCachedOrRuleBased(inputValue, profile);
       onUpdate(meal.id, {
         content: inputValue,
-        calories: estimate?.total || null,
+        calories: estimate?.totalCalories || null,
         calorieItems: estimate?.items || [],
       });
       setIsEditing(false);

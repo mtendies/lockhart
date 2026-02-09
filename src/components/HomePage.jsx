@@ -3245,16 +3245,16 @@ function DetailedFocusGoalCard({ item, index, onEditTarget, onRefresh }) {
       <div className="flex items-center justify-between ml-6">
         <p className="text-[11px] text-gray-500">{encouragement}</p>
 
-        {/* Icon-only action buttons - tiny green */}
+        {/* Icon-only action buttons - FIX M1: min-h-[44px] for mobile touch targets */}
         <div className="flex items-center gap-0.5">
           {item.progress?.trackable && (
             <div className="relative">
               <button
                 onClick={() => setShowTargetDropdown(!showTargetDropdown)}
-                className="p-1 text-green-600 hover:bg-green-100 rounded transition-colors"
+                className="p-2 min-h-[44px] min-w-[44px] flex items-center justify-center text-green-600 hover:bg-green-100 rounded transition-colors"
                 title="Edit target"
               >
-                <Pencil size={12} />
+                <Pencil size={14} />
               </button>
 
               {/* Target Dropdown */}
@@ -3281,14 +3281,14 @@ function DetailedFocusGoalCard({ item, index, onEditTarget, onRefresh }) {
           {activities.length > 0 && (
             <button
               onClick={() => setShowEntries(!showEntries)}
-              className={`p-1 rounded transition-colors ${
+              className={`p-2 min-h-[44px] min-w-[44px] flex items-center justify-center rounded transition-colors ${
                 showEntries
                   ? 'text-green-700 bg-green-200'
                   : 'text-green-600 hover:bg-green-100'
               }`}
               title="View entries"
             >
-              <FolderOpen size={12} />
+              <FolderOpen size={14} />
             </button>
           )}
         </div>

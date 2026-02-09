@@ -10,8 +10,35 @@
 import { estimateCalories as estimateCaloriesRuleBased } from './calorieEstimator';
 import { getRecentOrders } from './groceryStore';
 
-// In-memory cache: normalized text → estimate result
+// FIX CA1: LRU cache with 500 entry limit to prevent memory bloat
+const MAX_CACHE_SIZE = 500;
 const cache = new Map();
+
+// LRU cache helper: move key to end (most recent) and enforce size limit
+function cacheSet(key, value) {
+  // Delete and re-add to make it most recent (Map maintains insertion order)
+  if (cache.has(key)) {
+    cache.delete(key);
+  }
+  cache.set(key, value);
+
+  // Evict oldest entries if over limit
+  if (cache.size > MAX_CACHE_SIZE) {
+    const keysToDelete = Array.from(cache.keys()).slice(0, cache.size - MAX_CACHE_SIZE);
+    for (const k of keysToDelete) {
+      cache.delete(k);
+    }
+  }
+}
+
+function cacheGet(key) {
+  if (!cache.has(key)) return undefined;
+  // Move to end (most recently used)
+  const value = cache.get(key);
+  cache.delete(key);
+  cache.set(key, value);
+  return value;
+}
 
 // Normalize text for cache keys (lowercase, collapse whitespace, trim)
 function normalizeText(text) {
@@ -53,8 +80,11 @@ function getRecentGroceryItems() {
 
 function transformAIResponse(aiResult) {
   const items = (aiResult.items || []).map(item => {
-    const calPerUnit = item.caloriesPerUnit || Math.round(item.totalCalories / (item.quantity || 1));
-    const totalCal = item.totalCalories || Math.round(calPerUnit * (item.quantity || 1));
+    // FIX N4: Protect against NaN with proper validation
+    const rawTotalCal = item.totalCalories || 0;
+    const qty = item.quantity || 1;
+    const calPerUnit = item.caloriesPerUnit || (qty > 0 ? Math.round(rawTotalCal / qty) : 0);
+    const totalCal = rawTotalCal || Math.round((calPerUnit || 0) * qty);
 
     // Build confidence note based on confidence level
     let confidenceNote = null;
@@ -114,9 +144,10 @@ export async function estimateCaloriesAI(text) {
 
   const key = normalizeText(text);
 
-  // Check cache first
-  if (cache.has(key)) {
-    return { estimate: cache.get(key), isAI: cache.get(key).isAI !== false };
+  // Check cache first (using LRU helper)
+  const cached = cacheGet(key);
+  if (cached) {
+    return { estimate: cached, isAI: cached.isAI !== false };
   }
 
   try {
@@ -143,7 +174,7 @@ export async function estimateCaloriesAI(text) {
     }
 
     const estimate = transformAIResponse(aiResult);
-    cache.set(key, estimate);
+    cacheSet(key, estimate);
     return { estimate, isAI: true };
 
   } catch (err) {
@@ -171,9 +202,10 @@ export function getCachedOrRuleBased(text) {
 
   const key = normalizeText(text);
 
-  // Use cached AI result if available
-  if (cache.has(key)) {
-    return cache.get(key);
+  // Use cached AI result if available (using LRU helper)
+  const cached = cacheGet(key);
+  if (cached) {
+    return cached;
   }
 
   // Fall back to rule-based

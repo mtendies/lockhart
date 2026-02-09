@@ -4,6 +4,9 @@
  * Each profile has completely isolated data.
  */
 
+// FIX CA2: Import cache clear function to reset on profile switch
+import { clearCalorieCache } from './aiCalorieEstimator';
+
 const PROFILES_KEY = 'health-advisor-profiles';
 const ACTIVE_PROFILE_KEY = 'health-advisor-active-profile';
 
@@ -192,6 +195,9 @@ export function switchProfile(profileId) {
 
   // Set as active
   localStorage.setItem(ACTIVE_PROFILE_KEY, profileId);
+
+  // FIX CA2: Clear calorie cache on profile switch to prevent stale data
+  clearCalorieCache();
 
   return true;
 }

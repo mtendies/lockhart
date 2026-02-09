@@ -42,9 +42,63 @@ export function setItem(baseKey, value) {
     localStorage.setItem(key, value);
   } catch (e) {
     if (e?.name === 'QuotaExceededError' || e?.code === 22) {
-      console.error(`Storage quota exceeded for ${baseKey}. Data not saved.`);
+      // FIX C2: Attempt to prune old data on quota exceeded
+      console.warn(`Storage quota exceeded for ${baseKey}. Attempting to prune...`);
+      pruneOldestData();
+      try {
+        localStorage.setItem(key, value);
+        console.log(`Successfully saved ${baseKey} after pruning`);
+        return;
+      } catch (retryError) {
+        console.error(`Still exceeded quota after pruning for ${baseKey}`);
+        throw retryError;
+      }
     }
     throw e;
+  }
+}
+
+/**
+ * FIX C2: Prune oldest data to free up localStorage space
+ * Removes oldest entries from activity logs and check-ins first
+ */
+function pruneOldestData() {
+  // Try to prune activity logs first (usually largest)
+  try {
+    const activityKey = getStorageKey('health-advisor-activity-log');
+    const activityData = localStorage.getItem(activityKey);
+    if (activityData) {
+      const parsed = JSON.parse(activityData);
+      const entries = Array.isArray(parsed) ? parsed : (parsed?.entries || []);
+      if (entries.length > 50) {
+        // Keep only last 50 activities
+        const pruned = entries.slice(-50);
+        const newData = Array.isArray(parsed) ? pruned : { ...parsed, entries: pruned };
+        localStorage.setItem(activityKey, JSON.stringify(newData));
+        console.log(`Pruned activity logs from ${entries.length} to 50 entries`);
+      }
+    }
+  } catch (e) {
+    console.warn('Failed to prune activity logs:', e);
+  }
+
+  // Try to prune old check-ins
+  try {
+    const checkInKey = getStorageKey('health-advisor-checkins');
+    const checkInData = localStorage.getItem(checkInKey);
+    if (checkInData) {
+      const parsed = JSON.parse(checkInData);
+      const entries = Array.isArray(parsed) ? parsed : (parsed?.entries || []);
+      if (entries.length > 30) {
+        // Keep only last 30 check-ins
+        const pruned = entries.slice(-30);
+        const newData = Array.isArray(parsed) ? pruned : { ...parsed, entries: pruned };
+        localStorage.setItem(checkInKey, JSON.stringify(newData));
+        console.log(`Pruned check-ins from ${entries.length} to 30 entries`);
+      }
+    }
+  } catch (e) {
+    console.warn('Failed to prune check-ins:', e);
   }
 }
 

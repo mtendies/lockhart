@@ -835,11 +835,15 @@ export function completeDay(day) {
     const allComplete = CALIBRATION_DAYS.every(d => data.days[d]?.completed);
     if (allComplete && !data.completedAt) {
       data.completedAt = new Date().toISOString();
-      // Generate the nutrition profile
-      generateNutritionProfile(data);
     }
 
+    // FIX N3: Save calibration data BEFORE profile generation to avoid race condition
     saveCalibrationData(data, true); // immediate sync — critical state change
+
+    // Generate profile after calibration data is saved
+    if (allComplete && data.completedAt) {
+      generateNutritionProfile(data);
+    }
   }
   return data;
 }
@@ -1094,6 +1098,8 @@ export function generateNutritionProfile(calibrationData) {
   }
 
   saveNutritionProfile(profile);
+  // FIX N2: Sync nutrition profile to Supabase immediately after generation
+  syncNutritionImmediate();
   return profile;
 }
 
