@@ -96,21 +96,85 @@ function countCompletedDays(data) {
 }
 
 /**
+ * Special handling for profile data.
+ * Profile with more fields filled out should be preserved.
+ */
+function shouldPreserveLocalProfile(localData, remoteData) {
+  // Count non-empty fields in each
+  const countFields = (data) => {
+    if (!data || typeof data !== 'object') return 0;
+    return Object.values(data).filter(v => v !== null && v !== undefined && v !== '').length;
+  };
+
+  const localFields = countFields(localData);
+  const remoteFields = countFields(remoteData);
+
+  // If local has more data, preserve it
+  if (localFields > remoteFields) {
+    console.log(`[SimpleSync] CONFLICT: Local profile has more data (${localFields} fields vs ${remoteFields}). Keeping local.`);
+    return true;
+  }
+
+  // If local has specific important fields that remote doesn't, preserve local
+  const importantFields = ['weight', 'height', 'age', 'activityLevel', 'goals'];
+  for (const field of importantFields) {
+    if (localData?.[field] && !remoteData?.[field]) {
+      console.log(`[SimpleSync] CONFLICT: Local profile has ${field}, remote doesn't. Keeping local.`);
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
  * Determine if local data should be preserved over remote data.
- * Returns true if local is newer or more complete.
+ *
+ * IMPORTANT: Default to LOCAL WINS when uncertain.
+ * It's better to keep local data than accidentally overwrite it.
+ * Remote only wins if we can PROVE it's newer/better.
  */
 function shouldPreserveLocal(localKey, localData, remoteData) {
+  // If local data exists but remote is empty/null, always keep local
+  if (localData && (!remoteData || Object.keys(remoteData).length === 0)) {
+    console.log(`[SimpleSync] CONFLICT: Local ${localKey} has data, remote is empty. Keeping local.`);
+    return true;
+  }
+
   // Special handling for nutrition calibration
   if (localKey === 'health-advisor-nutrition-calibration') {
     return shouldPreserveLocalCalibration(localData, remoteData);
+  }
+
+  // Special handling for profile data
+  if (localKey === 'health-advisor-profile') {
+    return shouldPreserveLocalProfile(localData, remoteData);
   }
 
   // For other data types, compare timestamps
   const localTs = getDataTimestamp(localData);
   const remoteTs = getDataTimestamp(remoteData);
 
-  if (localTs && remoteTs && localTs > remoteTs) {
-    console.log(`[SimpleSync] CONFLICT: Local ${localKey} is newer (${new Date(localTs).toISOString()} vs ${new Date(remoteTs).toISOString()}). Keeping local.`);
+  // If both have timestamps, compare them
+  if (localTs && remoteTs) {
+    if (localTs > remoteTs) {
+      console.log(`[SimpleSync] CONFLICT: Local ${localKey} is newer (${new Date(localTs).toISOString()} vs ${new Date(remoteTs).toISOString()}). Keeping local.`);
+      return true;
+    }
+    // Remote is newer, allow overwrite
+    return false;
+  }
+
+  // If only local has a timestamp, keep local (it has metadata, remote doesn't)
+  if (localTs && !remoteTs) {
+    console.log(`[SimpleSync] CONFLICT: Local ${localKey} has timestamp, remote doesn't. Keeping local.`);
+    return true;
+  }
+
+  // NO TIMESTAMPS AVAILABLE - DEFAULT TO LOCAL WINS
+  // This is the safe choice: never overwrite local data without proof remote is better
+  if (localData && Object.keys(localData).length > 0) {
+    console.log(`[SimpleSync] CONFLICT: Cannot determine newer version for ${localKey}. Defaulting to LOCAL (safe choice).`);
     return true;
   }
 
