@@ -69,7 +69,12 @@ export function getSwapData() {
  * Save swap data to localStorage
  */
 export function saveSwapData(data) {
-  setItem(STORAGE_KEY, JSON.stringify(data));
+  // CRITICAL: Always add updatedAt for sync conflict resolution
+  const dataWithTimestamp = {
+    ...data,
+    updatedAt: new Date().toISOString(),
+  };
+  setItem(STORAGE_KEY, JSON.stringify(dataWithTimestamp));
   syncToSupabaseDebounced(STORAGE_KEY);
 }
 

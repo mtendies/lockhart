@@ -6,14 +6,26 @@ const STORAGE_KEY = 'health-advisor-bookmarks';
 export function getBookmarks() {
   try {
     const raw = getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
+    if (!raw) return [];
+    const data = JSON.parse(raw);
+    // Backwards compatibility: handle both array and wrapper object formats
+    return Array.isArray(data) ? data : (data?.bookmarks || []);
   } catch {
     return [];
   }
 }
 
+/**
+ * Save bookmarks to storage and sync to Supabase
+ * Wraps bookmarks array with updatedAt for sync conflict resolution
+ */
 function saveBookmarks(bookmarks) {
-  setItem(STORAGE_KEY, JSON.stringify(bookmarks));
+  // CRITICAL: Wrap with updatedAt for sync conflict resolution
+  const dataWithTimestamp = {
+    bookmarks,
+    updatedAt: new Date().toISOString(),
+  };
+  setItem(STORAGE_KEY, JSON.stringify(dataWithTimestamp));
   // Sync to Supabase in background (debounced)
   syncBookmarks();
 }

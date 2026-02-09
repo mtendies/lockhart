@@ -29,11 +29,15 @@ const CATEGORY_KEYWORDS = {
 
 /**
  * Get all chats from storage
+ * Handles both legacy array format and new {chats, updatedAt} wrapper format
  */
 export function getAllChats() {
   try {
-    const data = getItem(STORAGE_KEY);
-    return data ? JSON.parse(data) : [];
+    const raw = getItem(STORAGE_KEY);
+    if (!raw) return [];
+    const data = JSON.parse(raw);
+    // Backwards compatibility: handle both array and wrapper object formats
+    return Array.isArray(data) ? data : (data?.chats || []);
   } catch {
     return [];
   }
@@ -41,9 +45,15 @@ export function getAllChats() {
 
 /**
  * Save all chats to storage and sync to Supabase
+ * Wraps chats array with updatedAt for sync conflict resolution
  */
 function saveChats(chats) {
-  setItem(STORAGE_KEY, JSON.stringify(chats));
+  // CRITICAL: Wrap with updatedAt for sync conflict resolution
+  const dataWithTimestamp = {
+    chats,
+    updatedAt: new Date().toISOString(),
+  };
+  setItem(STORAGE_KEY, JSON.stringify(dataWithTimestamp));
   // Sync to Supabase in background (debounced)
   syncChats();
 }

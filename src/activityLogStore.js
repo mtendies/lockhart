@@ -39,11 +39,15 @@ export const WORKOUT_TYPES = {
 
 /**
  * Get all activities from storage
+ * Handles both legacy array format and new {activities, updatedAt} wrapper format
  */
 export function getActivities() {
   try {
-    const data = getItem(STORAGE_KEY);
-    return data ? JSON.parse(data) : [];
+    const raw = getItem(STORAGE_KEY);
+    if (!raw) return [];
+    const data = JSON.parse(raw);
+    // Backwards compatibility: handle both array and wrapper object formats
+    return Array.isArray(data) ? data : (data?.activities || []);
   } catch {
     return [];
   }
@@ -51,9 +55,15 @@ export function getActivities() {
 
 /**
  * Save activities to storage and sync to Supabase
+ * Wraps activities array with updatedAt for sync conflict resolution
  */
 function saveActivities(activities) {
-  setItem(STORAGE_KEY, JSON.stringify(activities));
+  // CRITICAL: Wrap with updatedAt for sync conflict resolution
+  const dataWithTimestamp = {
+    activities,
+    updatedAt: new Date().toISOString(),
+  };
+  setItem(STORAGE_KEY, JSON.stringify(dataWithTimestamp));
   // Sync to Supabase in background (debounced)
   syncActivities();
 }

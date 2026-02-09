@@ -37,7 +37,12 @@ export function getProfile() {
 export function saveProfile(profile) {
   // Create backup before modifying
   createBackup();
-  setItem(STORAGE_KEY, JSON.stringify(profile));
+  // CRITICAL: Always add updatedAt for sync conflict resolution
+  const profileWithTimestamp = {
+    ...profile,
+    updatedAt: new Date().toISOString(),
+  };
+  setItem(STORAGE_KEY, JSON.stringify(profileWithTimestamp));
   // Sync to Supabase in background (debounced)
   syncProfile();
 }

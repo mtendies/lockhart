@@ -21,7 +21,12 @@ export function addNote(section, text) {
 }
 
 export function saveNotes(notes) {
-  setItem(STORAGE_KEY, JSON.stringify(notes));
+  // CRITICAL: Always add updatedAt for sync conflict resolution
+  const dataWithTimestamp = {
+    ...notes,
+    updatedAt: new Date().toISOString(),
+  };
+  setItem(STORAGE_KEY, JSON.stringify(dataWithTimestamp));
   // Sync to Supabase in background (debounced)
   syncNotes();
 }

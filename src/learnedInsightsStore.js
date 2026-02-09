@@ -33,12 +33,16 @@ export const CATEGORY_COLORS = {
 
 /**
  * Get all learned insights
+ * Handles both legacy array format and new {insights, updatedAt} wrapper format
  * @returns {Array} Array of insight objects
  */
 export function getLearnedInsights() {
   try {
-    const data = getItem(STORAGE_KEY);
-    return data ? JSON.parse(data) : [];
+    const raw = getItem(STORAGE_KEY);
+    if (!raw) return [];
+    const data = JSON.parse(raw);
+    // Backwards compatibility: handle both array and wrapper object formats
+    return Array.isArray(data) ? data : (data?.insights || []);
   } catch {
     return [];
   }
@@ -46,9 +50,15 @@ export function getLearnedInsights() {
 
 /**
  * Save insights to storage and sync to Supabase
+ * Wraps insights array with updatedAt for sync conflict resolution
  */
 function saveInsights(insights) {
-  setItem(STORAGE_KEY, JSON.stringify(insights));
+  // CRITICAL: Wrap with updatedAt for sync conflict resolution
+  const dataWithTimestamp = {
+    insights,
+    updatedAt: new Date().toISOString(),
+  };
+  setItem(STORAGE_KEY, JSON.stringify(dataWithTimestamp));
   // Sync to Supabase in background (debounced)
   syncInsights();
 }

@@ -15,7 +15,9 @@ export function getPlaybook() {
 export function savePlaybook(playbook) {
   const playbookWithTimestamp = {
     ...playbook,
-    generatedAt: new Date().toISOString(),
+    generatedAt: playbook.generatedAt || new Date().toISOString(),
+    // CRITICAL: Always add updatedAt for sync conflict resolution
+    updatedAt: new Date().toISOString(),
   };
 
   setItem(STORAGE_KEY, JSON.stringify(playbookWithTimestamp));

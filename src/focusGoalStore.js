@@ -49,7 +49,12 @@ export function getGoalsData() {
  * Save goals data and sync
  */
 export function saveGoalsData(data) {
-  setItem(GOALS_KEY, JSON.stringify(data));
+  // CRITICAL: Always add updatedAt for sync conflict resolution
+  const dataWithTimestamp = {
+    ...data,
+    updatedAt: new Date().toISOString(),
+  };
+  setItem(GOALS_KEY, JSON.stringify(dataWithTimestamp));
   syncGoals();
 }
 
@@ -454,11 +459,15 @@ export function performWeeklyTransition(decisions) {
 
 /**
  * Get all goal history
+ * Handles both legacy array format and new {history, updatedAt} wrapper format
  */
 export function getGoalHistory() {
   try {
     const raw = getItem(HISTORY_KEY);
-    return raw ? JSON.parse(raw) : [];
+    if (!raw) return [];
+    const data = JSON.parse(raw);
+    // Backwards compatibility: handle both array and wrapper object formats
+    return Array.isArray(data) ? data : (data?.history || []);
   } catch {
     return [];
   }
@@ -466,9 +475,15 @@ export function getGoalHistory() {
 
 /**
  * Save goal history and sync
+ * Wraps history array with updatedAt for sync conflict resolution
  */
 function saveGoalHistory(history) {
-  setItem(HISTORY_KEY, JSON.stringify(history));
+  // CRITICAL: Wrap with updatedAt for sync conflict resolution
+  const dataWithTimestamp = {
+    history,
+    updatedAt: new Date().toISOString(),
+  };
+  setItem(HISTORY_KEY, JSON.stringify(dataWithTimestamp));
   syncGoalHistory();
 }
 

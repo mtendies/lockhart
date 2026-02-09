@@ -8,10 +8,27 @@ const DRAFT_KEY = 'health-advisor-checkin-draft';
 export function getCheckIns() {
   try {
     const raw = getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
+    if (!raw) return [];
+    const data = JSON.parse(raw);
+    // Backwards compatibility: handle both array and wrapper object formats
+    return Array.isArray(data) ? data : (data?.checkIns || []);
   } catch {
     return [];
   }
+}
+
+/**
+ * Save check-ins to storage and sync to Supabase
+ * Wraps checkIns array with updatedAt for sync conflict resolution
+ */
+function saveCheckIns(checkIns) {
+  // CRITICAL: Wrap with updatedAt for sync conflict resolution
+  const dataWithTimestamp = {
+    checkIns,
+    updatedAt: new Date().toISOString(),
+  };
+  setItem(STORAGE_KEY, JSON.stringify(dataWithTimestamp));
+  syncCheckins();
 }
 
 // Get the Monday of the PREVIOUS week
@@ -134,10 +151,7 @@ export function addCheckIn(checkIn) {
     weekOf: getWeekStart(new Date()),
   };
   checkIns.push(entry);
-  setItem(STORAGE_KEY, JSON.stringify(checkIns));
-
-  // Sync to Supabase in background (debounced)
-  syncCheckins();
+  saveCheckIns(checkIns);
 
   return checkIns;
 }
@@ -224,8 +238,7 @@ export function clearCurrentWeekCheckIn() {
 
   // Filter out current week's check-in
   const filteredCheckIns = checkIns.filter(c => c.weekOf !== currentWeek);
-  setItem(STORAGE_KEY, JSON.stringify(filteredCheckIns));
-  syncCheckins(); // Sync to Supabase
+  saveCheckIns(filteredCheckIns);
 
   // Also clear draft and reminder state
   clearDraft();

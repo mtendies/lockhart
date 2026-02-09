@@ -29,7 +29,12 @@ export function getGroceryData() {
 }
 
 export function saveGroceryData(data) {
-  setItem(STORAGE_KEY, JSON.stringify(data));
+  // CRITICAL: Always add updatedAt for sync conflict resolution
+  const dataWithTimestamp = {
+    ...data,
+    updatedAt: new Date().toISOString(),
+  };
+  setItem(STORAGE_KEY, JSON.stringify(dataWithTimestamp));
   // Sync to Supabase in background (debounced)
   syncGrocery();
 }
