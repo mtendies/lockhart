@@ -44,6 +44,80 @@ async function getCurrentUserId() {
 }
 
 // ============================================
+// CONFLICT RESOLUTION HELPERS
+// ============================================
+
+/**
+ * Extract a timestamp from data for comparison.
+ * Looks for common timestamp fields.
+ */
+function getDataTimestamp(data) {
+  if (!data || typeof data !== 'object') return null;
+
+  // Check common timestamp fields in order of preference
+  const timestampFields = ['updatedAt', 'updated_at', 'completedAt', 'createdAt', 'created_at'];
+  for (const field of timestampFields) {
+    if (data[field]) {
+      const ts = new Date(data[field]).getTime();
+      if (!isNaN(ts)) return ts;
+    }
+  }
+  return null;
+}
+
+/**
+ * Special handling for nutrition calibration data.
+ * A completed calibration should NEVER be overwritten with incomplete data.
+ */
+function shouldPreserveLocalCalibration(localData, remoteData) {
+  // If local has completedAt and remote doesn't, ALWAYS keep local
+  if (localData?.completedAt && !remoteData?.completedAt) {
+    console.log('[SimpleSync] CONFLICT: Local calibration is COMPLETE, remote is not. Keeping local.');
+    return true;
+  }
+
+  // If local has more completed days, keep local
+  const localCompletedDays = countCompletedDays(localData);
+  const remoteCompletedDays = countCompletedDays(remoteData);
+  if (localCompletedDays > remoteCompletedDays) {
+    console.log(`[SimpleSync] CONFLICT: Local has ${localCompletedDays} completed days, remote has ${remoteCompletedDays}. Keeping local.`);
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Count completed days in calibration data
+ */
+function countCompletedDays(data) {
+  if (!data?.days) return 0;
+  return Object.values(data.days).filter(day => day?.completed).length;
+}
+
+/**
+ * Determine if local data should be preserved over remote data.
+ * Returns true if local is newer or more complete.
+ */
+function shouldPreserveLocal(localKey, localData, remoteData) {
+  // Special handling for nutrition calibration
+  if (localKey === 'health-advisor-nutrition-calibration') {
+    return shouldPreserveLocalCalibration(localData, remoteData);
+  }
+
+  // For other data types, compare timestamps
+  const localTs = getDataTimestamp(localData);
+  const remoteTs = getDataTimestamp(remoteData);
+
+  if (localTs && remoteTs && localTs > remoteTs) {
+    console.log(`[SimpleSync] CONFLICT: Local ${localKey} is newer (${new Date(localTs).toISOString()} vs ${new Date(remoteTs).toISOString()}). Keeping local.`);
+    return true;
+  }
+
+  return false;
+}
+
+// ============================================
 // LOAD FROM SUPABASE → localStorage
 // ============================================
 
@@ -51,16 +125,21 @@ async function getCurrentUserId() {
  * Load ALL user data from Supabase into localStorage.
  * Called once on app load after authentication.
  *
- * @returns {Promise<{success: boolean, loaded: string[], errors: string[]}>}
+ * NOW WITH CONFLICT RESOLUTION:
+ * - Compares local and remote data before overwriting
+ * - If local is newer or more complete, pushes local TO Supabase instead
+ * - Special protection for completed nutrition calibrations
+ *
+ * @returns {Promise<{success: boolean, loaded: string[], errors: string[], preserved: string[], pushed: string[]}>}
  */
 export async function loadFromSupabase() {
   const userId = await getCurrentUserId();
   if (!userId) {
     console.log('[SimpleSync] No user ID, skipping load');
-    return { success: false, loaded: [], errors: ['Not authenticated'] };
+    return { success: false, loaded: [], errors: ['Not authenticated'], preserved: [], pushed: [] };
   }
 
-  console.log('[SimpleSync] Loading all data from Supabase...');
+  console.log('[SimpleSync] Loading all data from Supabase (with conflict resolution)...');
 
   try {
     // Fetch all columns in one query
@@ -74,38 +153,60 @@ export async function loadFromSupabase() {
       // PGRST116 = no rows found (new user)
       if (error.code === 'PGRST116') {
         console.log('[SimpleSync] No profile found (new user)');
-        return { success: true, loaded: [], errors: [] };
+        return { success: true, loaded: [], errors: [], preserved: [], pushed: [] };
       }
       console.error('[SimpleSync] Load error:', error);
-      return { success: false, loaded: [], errors: [error.message] };
+      return { success: false, loaded: [], errors: [error.message], preserved: [], pushed: [] };
     }
 
     const loaded = [];
+    const preserved = [];
+    const pushed = [];
     const errors = [];
 
-    // For each column, save to localStorage if it has data
+    // For each column, check for conflicts before saving
     for (const column of ALL_COLUMNS) {
       const localKey = COLUMN_TO_KEY[column];
-      const value = data[column];
+      const remoteValue = data[column];
 
-      if (value !== null && value !== undefined) {
+      if (remoteValue !== null && remoteValue !== undefined) {
         try {
-          // Save directly to localStorage - NO transformation
-          setItem(localKey, JSON.stringify(value));
-          loaded.push(localKey);
-          console.log(`[SimpleSync] Loaded ${localKey} from ${column}`);
+          // Get existing local data
+          const localRaw = getItem(localKey);
+          const localData = localRaw ? JSON.parse(localRaw) : null;
+
+          // Check if we should preserve local data
+          if (localData && shouldPreserveLocal(localKey, localData, remoteValue)) {
+            // LOCAL WINS - push local to Supabase instead of overwriting
+            preserved.push(localKey);
+            console.log(`[SimpleSync] PRESERVED local ${localKey}, pushing to Supabase...`);
+
+            // Push local data to Supabase
+            const pushResult = await syncToSupabase(localKey);
+            if (pushResult.success) {
+              pushed.push(localKey);
+              console.log(`[SimpleSync] Pushed ${localKey} to Supabase`);
+            } else {
+              console.warn(`[SimpleSync] Failed to push ${localKey}: ${pushResult.error}`);
+            }
+          } else {
+            // REMOTE WINS - save to localStorage
+            setItem(localKey, JSON.stringify(remoteValue));
+            loaded.push(localKey);
+            console.log(`[SimpleSync] Loaded ${localKey} from ${column}`);
+          }
         } catch (e) {
-          errors.push(`Failed to save ${localKey}: ${e.message}`);
+          errors.push(`Failed to process ${localKey}: ${e.message}`);
         }
       }
     }
 
-    console.log(`[SimpleSync] Load complete. Loaded ${loaded.length} data types.`);
-    return { success: true, loaded, errors };
+    console.log(`[SimpleSync] Sync complete. Loaded: ${loaded.length}, Preserved: ${preserved.length}, Pushed: ${pushed.length}`);
+    return { success: true, loaded, errors, preserved, pushed };
 
   } catch (err) {
     console.error('[SimpleSync] Load failed:', err);
-    return { success: false, loaded: [], errors: [err.message] };
+    return { success: false, loaded: [], errors: [err.message], preserved: [], pushed: [] };
   }
 }
 

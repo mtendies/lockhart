@@ -44,7 +44,7 @@ import { hasLoseFatGoal, hasBuildMuscleGoal, getGoalsArray } from '../profileHel
 import { getPlaybook } from '../playbookStore';
 import { logActivity, ACTIVITY_TYPES, ACTIVITY_SOURCES, WORKOUT_TYPES } from '../activityLogStore';
 import DeleteConfirmationModal from './DeleteConfirmationModal';
-import DailyNutritionTracker from './DailyNutritionTracker';
+// DailyNutritionTracker replaced - using NutritionCalibrationCard with mode="daily" instead
 
 /**
  * MET values for common exercises (Metabolic Equivalent of Task)
@@ -1641,7 +1641,8 @@ function SmartSuggestionsPopup({ remainingCalories, profile, onClose }) {
 }
 
 // Nutrition Calibration Section for Home (Toned down version)
-function NutritionCalibrationCard() {
+// Also used for daily tracking post-calibration when mode="daily"
+function NutritionCalibrationCard({ mode = 'calibration' }) {
   const [calibrationData, setCalibrationData] = useState(null);
   const [showPreviousDays, setShowPreviousDays] = useState(false);
   const [dragIndex, setDragIndex] = useState(null);
@@ -1652,10 +1653,16 @@ function NutritionCalibrationCard() {
   const activeDay = editingDay || todayKey; // The day currently being edited
   const profile = getProfile();
 
+  // Daily tracking mode (post-calibration) - just track today, no day progress
+  const isDailyMode = mode === 'daily';
+
   useEffect(() => {
     const data = getCalibrationData();
     // Ensure today has meals initialized (in case synced data has empty meals)
-    if (todayKey && CALIBRATION_DAYS.includes(todayKey)) {
+    // In daily mode, initialize any day (including weekends)
+    // In calibration mode, only initialize Mon-Fri
+    const shouldInit = isDailyMode ? todayKey : (todayKey && CALIBRATION_DAYS.includes(todayKey));
+    if (shouldInit) {
       if (!data.days[todayKey]?.meals || data.days[todayKey].meals.length === 0) {
         // Initialize today with default meals
         const defaultMeals = getDefaultMealPattern().map((meal, idx) => ({
@@ -1674,7 +1681,7 @@ function NutritionCalibrationCard() {
       }
     }
     setCalibrationData(data);
-  }, [todayKey]);
+  }, [todayKey, isDailyMode]);
 
   // Initialize meals for past day when selected for editing
   useEffect(() => {
@@ -1753,9 +1760,10 @@ function NutritionCalibrationCard() {
   if (!calibrationData) return null;
 
   const progress = getCalibrationProgress();
-  const activeDayData = activeDay && CALIBRATION_DAYS.includes(activeDay)
-    ? calibrationData.days[activeDay]
-    : null;
+  // In daily mode, any day is valid; in calibration mode, only Mon-Fri
+  const activeDayData = isDailyMode
+    ? (activeDay ? calibrationData.days[activeDay] : null)
+    : (activeDay && CALIBRATION_DAYS.includes(activeDay) ? calibrationData.days[activeDay] : null);
   const meals = activeDayData?.meals || [];
   const filledCount = meals.filter(m => m.content?.trim()).length;
   const isEditingPastDay = editingDay && editingDay !== todayKey;
@@ -1767,25 +1775,41 @@ function NutritionCalibrationCard() {
   );
 
   return (
-    <div className="bg-gradient-to-br from-amber-50 to-orange-50 rounded-2xl border border-amber-200 p-5">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-2">
-          <Unlock size={18} className="text-amber-600" />
-          <span className="font-semibold text-gray-900">Unlock Your Nutrition Profile</span>
+    <div className={`rounded-2xl border p-5 ${
+      isDailyMode
+        ? 'bg-gradient-to-br from-emerald-50 to-teal-50 border-emerald-200'
+        : 'bg-gradient-to-br from-amber-50 to-orange-50 border-amber-200'
+    }`}>
+      {/* Header - different for calibration vs daily mode */}
+      {isDailyMode ? (
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <Utensils size={18} className="text-emerald-600" />
+            <span className="font-semibold text-gray-900">Today's Meals</span>
+          </div>
+          <span className="text-sm text-gray-500">{formatSimpleDate()}</span>
         </div>
-        <span className="text-sm text-amber-700 font-medium">
-          Day {progress.calendarDay || Math.min(progress.completed + 1, 5)} of 5
-        </span>
-      </div>
+      ) : (
+        <>
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <Unlock size={18} className="text-amber-600" />
+              <span className="font-semibold text-gray-900">Unlock Your Nutrition Profile</span>
+            </div>
+            <span className="text-sm text-amber-700 font-medium">
+              Day {progress.calendarDay || Math.min(progress.completed + 1, 5)} of 5
+            </span>
+          </div>
 
-      {/* Progress bar */}
-      <div className="h-2 bg-amber-200 rounded-full mb-4 overflow-hidden">
-        <div
-          className="h-full bg-amber-500 rounded-full transition-all duration-500"
-          style={{ width: `${progress.percentage}%` }}
-        />
-      </div>
+          {/* Progress bar - only in calibration mode */}
+          <div className="h-2 bg-amber-200 rounded-full mb-4 overflow-hidden">
+            <div
+              className="h-full bg-amber-500 rounded-full transition-all duration-500"
+              style={{ width: `${progress.percentage}%` }}
+            />
+          </div>
+        </>
+      )}
 
       {/* FEATURE 1: Calorie Progress Section */}
       {activeDayData && meals.length > 0 && (() => {
@@ -1855,28 +1879,29 @@ function NutritionCalibrationCard() {
 
       {/* Active Day's Meals - Toned down date header */}
       {activeDayData && (
-        <div className="mb-4">
-          {/* Day Header */}
-          <div className="flex items-center justify-between mb-3 pb-2 border-b border-amber-200">
-            <div className="flex items-center gap-2">
-              {isEditingPastDay ? (
-                <>
-                  <span className="text-sm font-medium text-gray-700">{DAY_LABELS[activeDay]}</span>
-                  <span className="text-xs text-purple-600 font-medium">· Editing</span>
-                  {activeDayData.completed && (
-                    <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded">Completed</span>
-                  )}
-                </>
-              ) : (
-                <>
-                  <span className="text-sm font-medium text-gray-700">{formatSimpleDate()}</span>
-                  <span className="text-xs text-amber-600 font-medium">· Today</span>
-                </>
-              )}
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-gray-500">{filledCount} of {meals.length} logged</span>
-              {isEditingPastDay && (
+        <div className={isDailyMode ? '' : 'mb-4'}>
+          {/* Day Header - simplified in daily mode */}
+          {!isDailyMode && (
+            <div className="flex items-center justify-between mb-3 pb-2 border-b border-amber-200">
+              <div className="flex items-center gap-2">
+                {isEditingPastDay ? (
+                  <>
+                    <span className="text-sm font-medium text-gray-700">{DAY_LABELS[activeDay]}</span>
+                    <span className="text-xs text-purple-600 font-medium">· Editing</span>
+                    {activeDayData.completed && (
+                      <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded">Completed</span>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <span className="text-sm font-medium text-gray-700">{formatSimpleDate()}</span>
+                    <span className="text-xs text-amber-600 font-medium">· Today</span>
+                  </>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-gray-500">{filledCount} of {meals.length} logged</span>
+                {isEditingPastDay && (
                 <button
                   onClick={() => setEditingDay(null)}
                   className="text-xs text-primary-600 hover:text-primary-800 font-medium"
@@ -1886,6 +1911,7 @@ function NutritionCalibrationCard() {
               )}
             </div>
           </div>
+          )}
 
           {/* Meal Slots */}
           <div className="space-y-2">
@@ -1910,14 +1936,16 @@ function NutritionCalibrationCard() {
           {/* Add Meal Button */}
           <div className="mt-2">
             {showAddMeal ? (
-              <div className="p-3 bg-white/60 rounded-lg border border-amber-200">
+              <div className={`p-3 bg-white/60 rounded-lg border ${isDailyMode ? 'border-emerald-200' : 'border-amber-200'}`}>
                 <p className="text-xs text-gray-600 mb-2">Add a meal slot:</p>
                 <div className="flex flex-wrap gap-1">
                   {ALL_MEAL_TYPES.slice(0, 6).map(type => (
                     <button
                       key={type.id}
                       onClick={() => handleAddMeal(type.id)}
-                      className="px-2 py-1 text-xs bg-white border border-gray-200 rounded-lg hover:border-amber-300 hover:bg-amber-50"
+                      className={`px-2 py-1 text-xs bg-white border border-gray-200 rounded-lg ${
+                        isDailyMode ? 'hover:border-emerald-300 hover:bg-emerald-50' : 'hover:border-amber-300 hover:bg-amber-50'
+                      }`}
                     >
                       + {type.label}
                     </button>
@@ -1933,7 +1961,9 @@ function NutritionCalibrationCard() {
             ) : (
               <button
                 onClick={() => setShowAddMeal(true)}
-                className="text-xs text-amber-700 hover:text-amber-800 flex items-center gap-1"
+                className={`text-xs flex items-center gap-1 ${
+                  isDailyMode ? 'text-emerald-700 hover:text-emerald-800' : 'text-amber-700 hover:text-amber-800'
+                }`}
               >
                 <Plus size={12} /> Add another meal slot
               </button>
@@ -1942,7 +1972,8 @@ function NutritionCalibrationCard() {
         </div>
       )}
 
-      {/* FEATURE 3: Combined Day Progress + Completed Days Dropdown */}
+      {/* FEATURE 3: Combined Day Progress + Completed Days Dropdown - only in calibration mode */}
+      {!isDailyMode && (
       <div className="mt-4 pt-3 border-t border-amber-200">
         {/* Encouraging message with dropdown toggle */}
         <button
@@ -2080,6 +2111,7 @@ function NutritionCalibrationCard() {
           </div>
         )}
       </div>
+      )}
 
       {/* Smart Suggestions Popup */}
       {showSuggestions && (
@@ -3839,10 +3871,10 @@ export default function HomePage({ onNavigate, onOpenCheckIn, syncStatus, onRefr
           </section>
         )}
 
-        {/* 2c. Daily Nutrition Tracker (post-calibration) - Full featured */}
+        {/* 2c. Daily Nutrition Tracker (post-calibration) - Same UI as calibration, simplified */}
         {isCalibrationComplete() && (
           <section>
-            <DailyNutritionTracker />
+            <NutritionCalibrationCard mode="daily" />
           </section>
         )}
 

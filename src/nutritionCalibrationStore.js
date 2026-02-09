@@ -136,13 +136,15 @@ export const MEAL_LABELS = {
   custom: 'Custom',
 };
 
-// Day labels for display
+// Day labels for display (includes weekends for post-calibration daily tracking)
 export const DAY_LABELS = {
+  sunday: 'Sunday',
   monday: 'Monday',
   tuesday: 'Tuesday',
   wednesday: 'Wednesday',
   thursday: 'Thursday',
   friday: 'Friday',
+  saturday: 'Saturday',
 };
 
 /**
@@ -497,10 +499,71 @@ export function startCalibration() {
  * Ensure calibration data is aligned with the current week.
  * Fixes stale startedAt and ensures currentDay points to
  * the first uncompleted day. Called on component mount.
+ *
+ * SAFEGUARD: If calibration appears complete (all 5 days have meals),
+ * we set completedAt rather than resetting to "Day 1 of 5".
+ * A completed calibration should NEVER regress.
  */
 export function alignCalibrationToCurrentWeek() {
   const data = getCalibrationData();
-  if (data.completedAt) return data;
+
+  // SAFEGUARD 1: If completedAt is set, calibration is done - don't touch it
+  if (data.completedAt) {
+    console.log('[NutritionCalibration] Calibration already complete, skipping alignment');
+    return data;
+  }
+
+  // SAFEGUARD 2: Check if all 5 days are actually complete (even if completedAt wasn't set)
+  // This prevents data corruption from causing a regression
+  const completedDaysCount = CALIBRATION_DAYS.filter(day => {
+    const dayData = data.days[day];
+    if (!dayData) return false;
+    // Day is complete if it has the flag OR has 2+ meals with content
+    if (dayData.completed) return true;
+    const filledMeals = (dayData.meals || []).filter(m => m.content && m.content.trim()).length;
+    return filledMeals >= 2;
+  }).length;
+
+  if (completedDaysCount >= 5) {
+    console.log('[NutritionCalibration] SAFEGUARD: All 5 days have data but completedAt was missing. Setting it now.');
+    data.completedAt = new Date().toISOString();
+    // Mark all days as completed
+    for (const day of CALIBRATION_DAYS) {
+      if (data.days[day]) {
+        data.days[day].completed = true;
+        data.days[day].completedAt = data.days[day].completedAt || new Date().toISOString();
+      }
+    }
+    saveCalibrationData(data, true);
+    generateNutritionProfile(data);
+    return data;
+  }
+
+  // SAFEGUARD 3: If we have significant progress (3+ days), don't reset the week
+  // This preserves partial progress even if sync corrupted completedAt
+  if (completedDaysCount >= 3) {
+    console.log(`[NutritionCalibration] SAFEGUARD: ${completedDaysCount} days completed, preserving progress (not resetting week)`);
+    // Don't reset startedAt - just update currentDay
+    let found = false;
+    for (const day of CALIBRATION_DAYS) {
+      if (!data.days[day]?.completed) {
+        const filledMeals = (data.days[day]?.meals || []).filter(m => m.content && m.content.trim()).length;
+        if (filledMeals < 2) {
+          data.currentDay = day;
+          found = true;
+          break;
+        }
+      }
+    }
+    if (!found) {
+      data.currentDay = CALIBRATION_DAYS[CALIBRATION_DAYS.length - 1];
+    }
+    saveCalibrationData(data, true);
+    return data;
+  }
+
+  // Only reset the week if calibration is truly incomplete (0-2 days)
+  console.log(`[NutritionCalibration] Aligning to current week (${completedDaysCount} days completed)`);
 
   // Recalculate Monday of the current week
   const now = new Date();
@@ -845,12 +908,41 @@ export function getRemainingDaysCount() {
 }
 
 /**
- * Check if calibration is complete
+ * Check if calibration is complete.
+ *
+ * SAFEGUARD: Also returns true if all 5 days have sufficient meal data,
+ * even if completedAt wasn't properly set (data corruption protection).
  */
 export function isCalibrationComplete() {
   const data = getCalibrationData();
-  // Must check for both null AND undefined
-  return !!data.completedAt;
+
+  // Primary check: completedAt flag
+  if (data.completedAt) return true;
+
+  // SAFEGUARD: Check if all 5 days have 2+ meals with content
+  // This protects against data corruption where completedAt was lost
+  const completedDaysCount = CALIBRATION_DAYS.filter(day => {
+    const dayData = data.days[day];
+    if (!dayData) return false;
+    if (dayData.completed) return true;
+    const filledMeals = (dayData.meals || []).filter(m => m.content && m.content.trim()).length;
+    return filledMeals >= 2;
+  }).length;
+
+  if (completedDaysCount >= 5) {
+    console.log('[NutritionCalibration] SAFEGUARD: completedAt missing but all 5 days have data. Treating as complete.');
+    // Auto-repair: set completedAt for future calls
+    data.completedAt = new Date().toISOString();
+    for (const day of CALIBRATION_DAYS) {
+      if (data.days[day]) {
+        data.days[day].completed = true;
+      }
+    }
+    saveCalibrationData(data, true);
+    return true;
+  }
+
+  return false;
 }
 
 /**
