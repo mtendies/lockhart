@@ -7,6 +7,7 @@
 
 import { supabase } from './supabase';
 import { getItem, setItem } from '../storageHelper';
+import { createBackup } from './backupService';
 
 // ============================================
 // MAPPING: localStorage key → Supabase column
@@ -55,7 +56,8 @@ function getDataTimestamp(data) {
   if (!data || typeof data !== 'object') return null;
 
   // Check common timestamp fields in order of preference
-  const timestampFields = ['updatedAt', 'updated_at', 'completedAt', 'createdAt', 'created_at'];
+  // updatedAt is the primary field we set on every save
+  const timestampFields = ['updatedAt', 'updated_at', 'lastModified', 'completedAt', 'createdAt', 'created_at'];
   for (const field of timestampFields) {
     if (data[field]) {
       const ts = new Date(data[field]).getTime();
@@ -66,24 +68,63 @@ function getDataTimestamp(data) {
 }
 
 /**
+ * Count non-empty/meaningful fields in an object
+ */
+function countMeaningfulFields(data) {
+  if (!data || typeof data !== 'object') return 0;
+  return Object.entries(data).filter(([key, value]) => {
+    // Skip metadata fields
+    if (['updatedAt', 'updated_at', 'createdAt', 'created_at'].includes(key)) return false;
+    // Count only non-empty values
+    return value !== null && value !== undefined && value !== '' &&
+           !(Array.isArray(value) && value.length === 0) &&
+           !(typeof value === 'object' && Object.keys(value).length === 0);
+  }).length;
+}
+
+/**
  * Special handling for nutrition calibration data.
- * A completed calibration should NEVER be overwritten with incomplete data.
+ *
+ * IRON RULE: A completed calibration (completedAt set) should
+ * NEVER, EVER be overwritten with incomplete data. Period.
  */
 function shouldPreserveLocalCalibration(localData, remoteData) {
-  // If local has completedAt and remote doesn't, ALWAYS keep local
+  console.log('[SimpleSync] Calibration check:');
+  console.log(`[SimpleSync]   Local completedAt: ${localData?.completedAt || 'NOT SET'}`);
+  console.log(`[SimpleSync]   Remote completedAt: ${remoteData?.completedAt || 'NOT SET'}`);
+
+  // IRON RULE: If local has completedAt, NEVER overwrite with data that doesn't
   if (localData?.completedAt && !remoteData?.completedAt) {
-    console.log('[SimpleSync] CONFLICT: Local calibration is COMPLETE, remote is not. Keeping local.');
+    console.log('[SimpleSync]   ⚠️ BLOCKING: Local calibration is COMPLETE, remote is not. KEEPING LOCAL.');
     return true;
   }
 
   // If local has more completed days, keep local
   const localCompletedDays = countCompletedDays(localData);
   const remoteCompletedDays = countCompletedDays(remoteData);
+  console.log(`[SimpleSync]   Local completed days: ${localCompletedDays}`);
+  console.log(`[SimpleSync]   Remote completed days: ${remoteCompletedDays}`);
+
   if (localCompletedDays > remoteCompletedDays) {
-    console.log(`[SimpleSync] CONFLICT: Local has ${localCompletedDays} completed days, remote has ${remoteCompletedDays}. Keeping local.`);
+    console.log('[SimpleSync]   ⚠️ BLOCKING: Local has more completed days. KEEPING LOCAL.');
     return true;
   }
 
+  // If local has data and remote doesn't have calibration data at all
+  if (localData?.startedAt && !remoteData?.startedAt) {
+    console.log('[SimpleSync]   ⚠️ BLOCKING: Local has started calibration, remote hasn\'t. KEEPING LOCAL.');
+    return true;
+  }
+
+  // Compare timestamps if both are incomplete
+  const localTs = getDataTimestamp(localData);
+  const remoteTs = getDataTimestamp(remoteData);
+  if (localTs && remoteTs && localTs > remoteTs) {
+    console.log('[SimpleSync]   Local is newer. KEEPING LOCAL.');
+    return true;
+  }
+
+  console.log('[SimpleSync]   Remote calibration is acceptable.');
   return false;
 }
 
@@ -98,87 +139,140 @@ function countCompletedDays(data) {
 /**
  * Special handling for profile data.
  * Profile with more fields filled out should be preserved.
+ * Also protects critical computed fields like calorieTarget.
  */
 function shouldPreserveLocalProfile(localData, remoteData) {
-  // Count non-empty fields in each
-  const countFields = (data) => {
-    if (!data || typeof data !== 'object') return 0;
-    return Object.values(data).filter(v => v !== null && v !== undefined && v !== '').length;
-  };
+  console.log('[SimpleSync] Profile check:');
 
-  const localFields = countFields(localData);
-  const remoteFields = countFields(remoteData);
+  const localFields = countMeaningfulFields(localData);
+  const remoteFields = countMeaningfulFields(remoteData);
+
+  console.log(`[SimpleSync]   Local profile fields: ${localFields}`);
+  console.log(`[SimpleSync]   Remote profile fields: ${remoteFields}`);
 
   // If local has more data, preserve it
   if (localFields > remoteFields) {
-    console.log(`[SimpleSync] CONFLICT: Local profile has more data (${localFields} fields vs ${remoteFields}). Keeping local.`);
+    console.log('[SimpleSync]   ⚠️ BLOCKING: Local profile has MORE data. KEEPING LOCAL.');
     return true;
   }
 
-  // If local has specific important fields that remote doesn't, preserve local
-  const importantFields = ['weight', 'height', 'age', 'activityLevel', 'goals'];
-  for (const field of importantFields) {
-    if (localData?.[field] && !remoteData?.[field]) {
-      console.log(`[SimpleSync] CONFLICT: Local profile has ${field}, remote doesn't. Keeping local.`);
+  // Critical fields that should never disappear
+  const criticalFields = ['calorieTarget', 'weight', 'height', 'age', 'activityLevel', 'meals', 'goals'];
+  for (const field of criticalFields) {
+    const localHas = localData?.[field] !== null && localData?.[field] !== undefined && localData?.[field] !== '';
+    const remoteHas = remoteData?.[field] !== null && remoteData?.[field] !== undefined && remoteData?.[field] !== '';
+
+    if (localHas && !remoteHas) {
+      console.log(`[SimpleSync]   ⚠️ BLOCKING: Local has ${field}, remote doesn't. KEEPING LOCAL.`);
       return true;
     }
   }
 
+  // Compare timestamps
+  const localTs = getDataTimestamp(localData);
+  const remoteTs = getDataTimestamp(remoteData);
+
+  console.log(`[SimpleSync]   Local updatedAt: ${localTs ? new Date(localTs).toISOString() : 'NONE'}`);
+  console.log(`[SimpleSync]   Remote updatedAt: ${remoteTs ? new Date(remoteTs).toISOString() : 'NONE'}`);
+
+  if (localTs && remoteTs && localTs > remoteTs) {
+    console.log('[SimpleSync]   Local is newer. KEEPING LOCAL.');
+    return true;
+  }
+
+  if (localTs && !remoteTs) {
+    console.log('[SimpleSync]   Local has timestamp, remote doesn\'t. KEEPING LOCAL.');
+    return true;
+  }
+
+  console.log('[SimpleSync]   Remote profile is acceptable.');
   return false;
 }
 
 /**
  * Determine if local data should be preserved over remote data.
  *
- * IMPORTANT: Default to LOCAL WINS when uncertain.
- * It's better to keep local data than accidentally overwrite it.
- * Remote only wins if we can PROVE it's newer/better.
+ * CRITICAL RULE: LOCAL WINS BY DEFAULT.
+ * Remote only overwrites local if we can PROVE remote is:
+ * 1. Newer (via timestamp comparison) AND
+ * 2. More complete (via field count comparison)
+ *
+ * This prevents accidental data loss from stale remote data.
  */
 function shouldPreserveLocal(localKey, localData, remoteData) {
-  // If local data exists but remote is empty/null, always keep local
+  console.log(`[SimpleSync] ═══════════════════════════════════════`);
+  console.log(`[SimpleSync] SYNC DECISION for: ${localKey}`);
+
+  // RULE 1: If local has data and remote is empty → KEEP LOCAL
   if (localData && (!remoteData || Object.keys(remoteData).length === 0)) {
-    console.log(`[SimpleSync] CONFLICT: Local ${localKey} has data, remote is empty. Keeping local.`);
+    console.log(`[SimpleSync] ✓ KEEP LOCAL: Remote is empty, local has data`);
+    console.log(`[SimpleSync] ═══════════════════════════════════════`);
     return true;
   }
 
-  // Special handling for nutrition calibration
-  if (localKey === 'health-advisor-nutrition-calibration') {
-    return shouldPreserveLocalCalibration(localData, remoteData);
-  }
-
-  // Special handling for profile data
-  if (localKey === 'health-advisor-profile') {
-    return shouldPreserveLocalProfile(localData, remoteData);
-  }
-
-  // For other data types, compare timestamps
-  const localTs = getDataTimestamp(localData);
-  const remoteTs = getDataTimestamp(remoteData);
-
-  // If both have timestamps, compare them
-  if (localTs && remoteTs) {
-    if (localTs > remoteTs) {
-      console.log(`[SimpleSync] CONFLICT: Local ${localKey} is newer (${new Date(localTs).toISOString()} vs ${new Date(remoteTs).toISOString()}). Keeping local.`);
-      return true;
-    }
-    // Remote is newer, allow overwrite
+  // RULE 2: If no local data → Accept remote
+  if (!localData || Object.keys(localData).length === 0) {
+    console.log(`[SimpleSync] ✓ USE REMOTE: Local is empty`);
+    console.log(`[SimpleSync] ═══════════════════════════════════════`);
     return false;
   }
 
-  // If only local has a timestamp, keep local (it has metadata, remote doesn't)
+  // RULE 3: Special handling for nutrition calibration - NEVER reset completed
+  if (localKey === 'health-advisor-nutrition-calibration') {
+    const result = shouldPreserveLocalCalibration(localData, remoteData);
+    console.log(`[SimpleSync] ${result ? '✓ KEEP LOCAL' : '✓ USE REMOTE'}: Calibration-specific logic`);
+    console.log(`[SimpleSync] ═══════════════════════════════════════`);
+    return result;
+  }
+
+  // RULE 4: Special handling for profile data - prefer more complete version
+  if (localKey === 'health-advisor-profile') {
+    const result = shouldPreserveLocalProfile(localData, remoteData);
+    console.log(`[SimpleSync] ${result ? '✓ KEEP LOCAL' : '✓ USE REMOTE'}: Profile-specific logic`);
+    console.log(`[SimpleSync] ═══════════════════════════════════════`);
+    return result;
+  }
+
+  // RULE 5: Compare timestamps
+  const localTs = getDataTimestamp(localData);
+  const remoteTs = getDataTimestamp(remoteData);
+
+  console.log(`[SimpleSync] Local timestamp: ${localTs ? new Date(localTs).toISOString() : 'NONE'}`);
+  console.log(`[SimpleSync] Remote timestamp: ${remoteTs ? new Date(remoteTs).toISOString() : 'NONE'}`);
+
+  // If both have timestamps, newer wins
+  if (localTs && remoteTs) {
+    if (localTs >= remoteTs) {
+      console.log(`[SimpleSync] ✓ KEEP LOCAL: Local is newer or same age`);
+      console.log(`[SimpleSync] ═══════════════════════════════════════`);
+      return true;
+    }
+    // Remote is strictly newer - but double-check field counts
+    const localFields = countMeaningfulFields(localData);
+    const remoteFields = countMeaningfulFields(remoteData);
+    console.log(`[SimpleSync] Local fields: ${localFields}, Remote fields: ${remoteFields}`);
+
+    if (localFields > remoteFields) {
+      console.log(`[SimpleSync] ✓ KEEP LOCAL: Remote is newer but local has MORE data (${localFields} > ${remoteFields})`);
+      console.log(`[SimpleSync] ═══════════════════════════════════════`);
+      return true;
+    }
+    console.log(`[SimpleSync] ✓ USE REMOTE: Remote is newer AND has equal or more data`);
+    console.log(`[SimpleSync] ═══════════════════════════════════════`);
+    return false;
+  }
+
+  // RULE 6: Only local has timestamp → KEEP LOCAL
   if (localTs && !remoteTs) {
-    console.log(`[SimpleSync] CONFLICT: Local ${localKey} has timestamp, remote doesn't. Keeping local.`);
+    console.log(`[SimpleSync] ✓ KEEP LOCAL: Local has timestamp, remote doesn't`);
+    console.log(`[SimpleSync] ═══════════════════════════════════════`);
     return true;
   }
 
-  // NO TIMESTAMPS AVAILABLE - DEFAULT TO LOCAL WINS
-  // This is the safe choice: never overwrite local data without proof remote is better
-  if (localData && Object.keys(localData).length > 0) {
-    console.log(`[SimpleSync] CONFLICT: Cannot determine newer version for ${localKey}. Defaulting to LOCAL (safe choice).`);
-    return true;
-  }
-
-  return false;
+  // RULE 7: NO TIMESTAMPS - DEFAULT TO LOCAL (SAFE CHOICE)
+  console.log(`[SimpleSync] ✓ KEEP LOCAL: No timestamps available - defaulting to local (safe choice)`);
+  console.log(`[SimpleSync] ═══════════════════════════════════════`);
+  return true;
 }
 
 // ============================================
@@ -197,6 +291,15 @@ function shouldPreserveLocal(localKey, localData, remoteData) {
  * @returns {Promise<{success: boolean, loaded: string[], errors: string[], preserved: string[], pushed: string[]}>}
  */
 export async function loadFromSupabase() {
+  // CHECK FOR SYNC DISABLE FLAG - user can disable sync entirely
+  if (typeof window !== 'undefined') {
+    const syncDisabled = localStorage.getItem('health-advisor-sync-disabled');
+    if (syncDisabled === 'true') {
+      console.log('[SimpleSync] ⚠️ SYNC DISABLED BY USER - skipping all remote operations');
+      return { success: true, loaded: [], errors: [], preserved: ['ALL - sync disabled'], pushed: [] };
+    }
+  }
+
   const userId = await getCurrentUserId();
   if (!userId) {
     console.log('[SimpleSync] No user ID, skipping load');
@@ -286,6 +389,15 @@ export async function loadFromSupabase() {
  * @returns {Promise<{success: boolean, error?: string}>}
  */
 export async function syncToSupabase(localKey) {
+  // CHECK FOR SYNC DISABLE FLAG
+  if (typeof window !== 'undefined') {
+    const syncDisabled = localStorage.getItem('health-advisor-sync-disabled');
+    if (syncDisabled === 'true') {
+      console.log('[SimpleSync] ⚠️ SYNC DISABLED - not pushing to Supabase');
+      return { success: true };
+    }
+  }
+
   const column = SYNC_MAP[localKey];
   if (!column) {
     console.warn(`[SimpleSync] Unknown key: ${localKey}`);
@@ -342,6 +454,15 @@ export async function syncToSupabase(localKey) {
  * @returns {Promise<{success: boolean, synced: string[], errors: string[]}>}
  */
 export async function syncAllToSupabase() {
+  // CHECK FOR SYNC DISABLE FLAG
+  if (typeof window !== 'undefined') {
+    const syncDisabled = localStorage.getItem('health-advisor-sync-disabled');
+    if (syncDisabled === 'true') {
+      console.log('[SimpleSync] ⚠️ SYNC DISABLED - not pushing to Supabase');
+      return { success: true, synced: [], errors: [] };
+    }
+  }
+
   const userId = await getCurrentUserId();
   if (!userId) {
     return { success: false, synced: [], errors: ['Not authenticated'] };

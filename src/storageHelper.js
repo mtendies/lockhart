@@ -76,10 +76,20 @@ export function getJSON(baseKey, defaultValue = null) {
 }
 
 /**
- * Stringify and set JSON in localStorage with profile awareness
+ * Stringify and set JSON in localStorage with profile awareness.
+ * AUTOMATICALLY ADDS updatedAt TIMESTAMP for sync conflict resolution.
+ *
  * @param {string} baseKey - The base storage key
  * @param {*} value - The value to store
  */
 export function setJSON(baseKey, value) {
-  setItem(baseKey, JSON.stringify(value));
+  // Add updatedAt timestamp to objects for sync conflict resolution
+  let valueWithTimestamp = value;
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    valueWithTimestamp = {
+      ...value,
+      updatedAt: new Date().toISOString(),
+    };
+  }
+  setItem(baseKey, JSON.stringify(valueWithTimestamp));
 }

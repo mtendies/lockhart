@@ -7,6 +7,7 @@ import AdminFeedback from './components/AdminFeedback';
 import * as dataService from './lib/dataService';
 import { useSimpleSync } from './hooks/useSimpleSync';
 import { migrateToNewSync, verifyMigration, debugLocalStorage } from './lib/migrateSyncData';
+import { initBackupService, createBackup, listBackups, restoreFromBackup as restoreFromSupabaseBackup, manualBackup } from './lib/backupService';
 
 // Error boundary to catch and display React errors
 class ErrorBoundary extends Component {
@@ -79,7 +80,13 @@ function AppContent() {
   const { user, loading: authLoading, signOut } = useAuth();
   const { syncStatus, refresh, pushAll, isReady, isLoading } = useSimpleSync();
 
-  // Expose sync functions globally for console access
+  // Initialize backup service on mount
+  useEffect(() => {
+    initBackupService();
+    console.log('[App] Backup service initialized');
+  }, []);
+
+  // Expose sync and backup functions globally for console access
   useEffect(() => {
     // Pull fresh data from Supabase
     window.__forceSupabasePull = async () => {
@@ -101,12 +108,20 @@ function AppContent() {
     window.__verifyMigration = verifyMigration;
     window.__debugLocalStorage = debugLocalStorage;
 
+    // BACKUP FUNCTIONS - for manual backup and restore
+    window.__createBackup = manualBackup;
+    window.__listBackups = listBackups;
+    window.__restoreBackup = restoreFromSupabaseBackup;
+
     return () => {
       delete window.__forceSupabasePull;
       delete window.__pushAllToSupabase;
       delete window.__migrateToNewSync;
       delete window.__verifyMigration;
       delete window.__debugLocalStorage;
+      delete window.__createBackup;
+      delete window.__listBackups;
+      delete window.__restoreBackup;
     };
   }, [refresh, pushAll]);
   const [profile, setProfile] = useState(null);
@@ -230,6 +245,15 @@ function AppContent() {
       setNotes(getNotes());
       setPlaybook(getPlaybook());
       setActivityLogs(getActivitiesThisWeek());
+
+      // Create a backup after successful sync
+      createBackup().then(result => {
+        if (result.success) {
+          console.log('[App] ✓ Automatic backup created after sync');
+        }
+      }).catch(err => {
+        console.warn('[App] Backup failed:', err.message);
+      });
     }
   }, [isReady]);
 
