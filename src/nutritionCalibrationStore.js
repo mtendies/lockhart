@@ -419,6 +419,8 @@ export function getCalibrationData() {
       // Save repaired data
       if (repaired) {
         console.log('[NutritionCalibration] Saving repaired calibration data');
+        // CRITICAL: Add updatedAt for sync conflict resolution
+        data.updatedAt = new Date().toISOString();
         setItem(STORAGE_KEY, JSON.stringify(data));
         syncNutritionImmediate();
       }
@@ -444,6 +446,8 @@ export function getCalibrationData() {
     startedAt: monday.toISOString(),
     completedAt: null,
     currentDay: todayKey || 'monday',
+    // CRITICAL: Add updatedAt for sync conflict resolution
+    updatedAt: new Date().toISOString(),
     days: {
       monday: createEmptyDayWithMeals(),
       tuesday: createEmptyDayWithMeals(),
@@ -465,7 +469,12 @@ export function getCalibrationData() {
  * @param {boolean} immediate - If true, sync to Supabase immediately (no debounce)
  */
 export function saveCalibrationData(data, immediate = false) {
-  setItem(STORAGE_KEY, JSON.stringify(data));
+  // CRITICAL: Always add updatedAt for sync conflict resolution
+  const dataWithTimestamp = {
+    ...data,
+    updatedAt: new Date().toISOString(),
+  };
+  setItem(STORAGE_KEY, JSON.stringify(dataWithTimestamp));
   if (immediate) {
     syncNutritionImmediate();
   } else {

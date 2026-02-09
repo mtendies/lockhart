@@ -244,14 +244,14 @@ export function initBackupService() {
     const userId = localStorage.getItem('health-advisor-user-id');
     if (userId) {
       // Fire and forget - createBackup is async but we can't await here
-      createBackup().catch(() => {});
+      createBackup().catch(err => console.warn('[Backup] Failed on page close:', err.message));
     }
   });
 
   // Backup when app goes to background (mobile)
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') {
-      createBackup().catch(() => {});
+      createBackup().catch(err => console.warn('[Backup] Failed on visibility change:', err.message));
     }
   });
 

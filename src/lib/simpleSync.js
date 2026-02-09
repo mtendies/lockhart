@@ -95,7 +95,10 @@ function shouldPreserveLocalCalibration(localData, remoteData) {
 
   // IRON RULE: If local has completedAt, NEVER overwrite with data that doesn't
   if (localData?.completedAt && !remoteData?.completedAt) {
-    console.log('[SimpleSync]   ⚠️ BLOCKING: Local calibration is COMPLETE, remote is not. KEEPING LOCAL.');
+    console.warn('[SimpleSync] 🛡️ BLOCKED: Attempted overwrite of COMPLETED calibration with incomplete remote data!');
+    console.warn('[SimpleSync]   Local completedAt:', localData.completedAt);
+    console.warn('[SimpleSync]   Remote completedAt:', remoteData?.completedAt || 'MISSING');
+    console.warn('[SimpleSync]   ACTION: Keeping local, will push to Supabase to fix remote.');
     return true;
   }
 
@@ -434,7 +437,9 @@ export async function syncToSupabase(localKey) {
       return { success: false, error: error.message };
     }
 
-    console.log(`[SimpleSync] Synced ${localKey} → ${column}`);
+    // FIX 3: Log successful sync with timestamp for verification
+    const savedTimestamp = data.updatedAt || 'no timestamp';
+    console.log(`[SimpleSync] ✓ Synced ${localKey} → ${column} (updatedAt: ${savedTimestamp})`);
     return { success: true };
 
   } catch (err) {
