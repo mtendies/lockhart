@@ -843,73 +843,88 @@ export default function Chat({
         throw streamErr;
       }
 
-      // Extract notes
-      const notes = extractNotes(assistantText);
-      for (const note of notes) {
-        addNote(note.section, note.text);
-      }
+      // Wrap the entire parsing section in try/catch to prevent crashes
+      let finalText = assistantText;
+      let suggestion = null;
 
-      // Parse playbook suggestion
-      const { cleanText: textWithoutSuggestion, suggestion } = parsePlaybookSuggestion(assistantText);
-
-      // Parse and save learned insights
-      const { cleanText: textWithoutInsights, insights } = parseLearnedInsights(textWithoutSuggestion);
-
-      // Save insights and notify parent
-      for (const insight of insights) {
-        const savedInsight = addLearnedInsight({
-          ...insight,
-          chatId: currentChatId,
-          messageIndex: updated.length, // Index of the assistant message
-          originalText: text, // The user's original message
-        });
-        if (savedInsight) {
-          onNewInsight?.(savedInsight);
+      try {
+        // Extract notes
+        const notes = extractNotes(assistantText);
+        for (const note of notes) {
+          addNote(note.section, note.text);
         }
-      }
 
-      // Parse and apply goal updates
-      const { cleanText: textWithoutGoalUpdates, goalUpdates } = parseGoalUpdates(textWithoutInsights);
+        // Parse playbook suggestion
+        const { cleanText: textWithoutSuggestion, suggestion: parsedSuggestion } = parsePlaybookSuggestion(assistantText);
+        suggestion = parsedSuggestion;
 
-      // Apply each goal update
-      for (const goalUpdate of goalUpdates) {
-        try {
-          switch (goalUpdate.action) {
-            case 'update':
-              // Update existing goal
-              const updates = {};
-              if (goalUpdate.text) updates.text = goalUpdate.text;
-              if (goalUpdate.target) updates.target = goalUpdate.target;
-              if (goalUpdate.unit) updates.unit = goalUpdate.unit;
-              updateGoal(goalUpdate.goalId, updates);
-              break;
-            case 'add':
-              // Add new goal
-              addGoal({
-                text: goalUpdate.text,
-                target: goalUpdate.target || 1,
-                unit: goalUpdate.unit || 'times',
-                type: goalUpdate.type || 'one-time',
-              });
-              break;
-            case 'remove':
-              removeGoal(goalUpdate.goalId);
-              break;
-            case 'complete':
-              // Mark goal as complete by setting current to target
-              const goals = getGoals();
-              const goal = goals.find(g => g.id === goalUpdate.goalId);
-              if (goal) {
-                updateGoal(goalUpdate.goalId, { current: goal.target, status: 'completed' });
-              }
-              break;
+        // Parse and save learned insights
+        const { cleanText: textWithoutInsights, insights } = parseLearnedInsights(textWithoutSuggestion);
+
+        // Save insights and notify parent
+        for (const insight of insights) {
+          try {
+            const savedInsight = addLearnedInsight({
+              ...insight,
+              chatId: currentChatId,
+              messageIndex: updated.length, // Index of the assistant message
+              originalText: text, // The user's original message
+            });
+            if (savedInsight) {
+              onNewInsight?.(savedInsight);
+            }
+          } catch (insightErr) {
+            console.error('[Chat] Failed to save insight:', insightErr);
           }
-        } catch (err) {
-          console.error('Failed to apply goal update:', err, goalUpdate);
         }
-      }
 
-      let finalText = stripNotes(textWithoutGoalUpdates);
+        // Parse and apply goal updates
+        const { cleanText: textWithoutGoalUpdates, goalUpdates } = parseGoalUpdates(textWithoutInsights);
+
+        // Apply each goal update
+        for (const goalUpdate of goalUpdates) {
+          try {
+            switch (goalUpdate.action) {
+              case 'update':
+                // Update existing goal
+                const updates = {};
+                if (goalUpdate.text) updates.text = goalUpdate.text;
+                if (goalUpdate.target) updates.target = goalUpdate.target;
+                if (goalUpdate.unit) updates.unit = goalUpdate.unit;
+                updateGoal(goalUpdate.goalId, updates);
+                break;
+              case 'add':
+                // Add new goal
+                addGoal({
+                  text: goalUpdate.text,
+                  target: goalUpdate.target || 1,
+                  unit: goalUpdate.unit || 'times',
+                  type: goalUpdate.type || 'one-time',
+                });
+                break;
+              case 'remove':
+                removeGoal(goalUpdate.goalId);
+                break;
+              case 'complete':
+                // Mark goal as complete by setting current to target
+                const goals = getGoals();
+                const goal = goals.find(g => g.id === goalUpdate.goalId);
+                if (goal) {
+                  updateGoal(goalUpdate.goalId, { current: goal.target, status: 'completed' });
+                }
+                break;
+            }
+          } catch (err) {
+            console.error('Failed to apply goal update:', err, goalUpdate);
+          }
+        }
+
+        finalText = stripNotes(textWithoutGoalUpdates);
+      } catch (parseError) {
+        console.error('[Chat] Parsing pipeline error:', parseError);
+        // Fallback: use raw response
+        finalText = assistantText;
+      }
 
       // Update with final clean text
       const finalMessages = [...updated, { role: 'assistant', content: finalText }];

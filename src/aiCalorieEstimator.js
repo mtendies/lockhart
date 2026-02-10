@@ -154,14 +154,21 @@ export async function estimateCaloriesAI(text) {
     // Get recent grocery items for context
     const recentGroceries = getRecentGroceryItems();
 
+    // 8-second timeout to prevent UI hangs from serverless cold starts
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+
     const res = await fetch('/api/estimate-calories', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal,
       body: JSON.stringify({
         text: text.trim(),
         recentGroceries: recentGroceries.length > 0 ? recentGroceries : undefined,
       }),
     });
+
+    clearTimeout(timeoutId);
 
     if (!res.ok) {
       throw new Error(`API error: ${res.status}`);
@@ -178,7 +185,12 @@ export async function estimateCaloriesAI(text) {
     return { estimate, isAI: true };
 
   } catch (err) {
-    console.warn('[AICalorie] AI estimation failed, using rule-based fallback:', err.message);
+    // Handle AbortError specifically for timeout
+    if (err.name === 'AbortError') {
+      console.warn('[AICalorie] AI request timed out, using rule-based fallback');
+    } else {
+      console.warn('[AICalorie] AI estimation failed, using rule-based fallback:', err.message);
+    }
 
     // Fall back to rule-based
     const fallback = estimateCaloriesRuleBased(text);

@@ -523,6 +523,42 @@ const syncTimers = {};
 const pendingSyncs = new Set(); // Track keys that need syncing
 const DEBOUNCE_MS = 1000; // Wait 1 second before syncing
 
+// Failed sync queue for offline resilience
+const FAILED_SYNCS_KEY = 'health-advisor-failed-syncs';
+const MAX_RETRY_ATTEMPTS = 3;
+
+function loadFailedSyncs() {
+  try {
+    const stored = localStorage.getItem(FAILED_SYNCS_KEY);
+    return stored ? JSON.parse(stored) : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveFailedSyncs(failed) {
+  try {
+    localStorage.setItem(FAILED_SYNCS_KEY, JSON.stringify(failed));
+  } catch (e) {
+    console.warn('[SimpleSync] Failed to persist failed syncs:', e);
+  }
+}
+
+function queueFailedSync(localKey, error) {
+  const failed = loadFailedSyncs();
+  failed[localKey] = {
+    attempts: (failed[localKey]?.attempts || 0) + 1,
+    lastError: error,
+    lastAttempt: Date.now(),
+  };
+  saveFailedSyncs(failed);
+  console.warn(`[SimpleSync] Queued failed sync: ${localKey} (attempt ${failed[localKey].attempts})`);
+}
+
+function isOnline() {
+  return navigator.onLine !== false;
+}
+
 /**
  * Debounced sync - prevents flooding Supabase with rapid updates.
  * Use this for data that changes frequently (e.g., typing in a meal).
@@ -539,8 +575,28 @@ export function syncToSupabaseDebounced(localKey) {
   }
 
   // Set new timer
-  syncTimers[localKey] = setTimeout(() => {
-    syncToSupabase(localKey);
+  syncTimers[localKey] = setTimeout(async () => {
+    if (!isOnline()) {
+      console.log(`[SimpleSync] Offline, queuing ${localKey}`);
+      queueFailedSync(localKey, 'Offline');
+      pendingSyncs.delete(localKey);
+      delete syncTimers[localKey];
+      return;
+    }
+
+    const result = await syncToSupabase(localKey);
+
+    if (!result.success) {
+      queueFailedSync(localKey, result.error);
+    } else {
+      // Clear from failed queue on success
+      const failed = loadFailedSyncs();
+      if (failed[localKey]) {
+        delete failed[localKey];
+        saveFailedSyncs(failed);
+      }
+    }
+
     pendingSyncs.delete(localKey);
     delete syncTimers[localKey];
   }, DEBOUNCE_MS);
@@ -570,6 +626,27 @@ if (typeof window !== 'undefined') {
     if (document.visibilityState === 'hidden') {
       flushPendingSyncs();
     }
+  });
+
+  // Retry failed syncs when back online
+  window.addEventListener('online', async () => {
+    console.log('[SimpleSync] Back online, retrying failed syncs...');
+    const failed = loadFailedSyncs();
+
+    for (const [localKey, info] of Object.entries(failed)) {
+      if (info.attempts < MAX_RETRY_ATTEMPTS) {
+        const result = await syncToSupabase(localKey);
+        if (result.success) {
+          delete failed[localKey];
+          console.log(`[SimpleSync] Retry succeeded: ${localKey}`);
+        } else {
+          failed[localKey].attempts++;
+          failed[localKey].lastAttempt = Date.now();
+        }
+      }
+    }
+
+    saveFailedSyncs(failed);
   });
 }
 

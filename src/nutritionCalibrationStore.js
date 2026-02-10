@@ -13,6 +13,9 @@ import { getProfile } from './store';
 import { logActivity, ACTIVITY_TYPES } from './activityLogStore';
 import { syncNutrition, syncNutritionImmediate } from './lib/simpleSync';
 
+// Mutex lock to prevent concurrent completeDay calls causing race conditions
+let completionInProgress = false;
+
 const STORAGE_KEY = 'health-advisor-nutrition-calibration';
 const PROFILE_KEY = 'health-advisor-nutrition-profile';
 const DISMISSED_KEY = 'health-advisor-calibration-dismissed';
@@ -805,47 +808,58 @@ export function resetDayToDefault(day) {
  * Mark a day as complete and advance to the next uncompleted day
  */
 export function completeDay(day) {
-  const data = getCalibrationData();
-  if (data.days[day]) {
-    data.days[day].completed = true;
-    data.days[day].completedAt = new Date().toISOString();
+  // Mutex lock to prevent concurrent calls from causing race conditions
+  if (completionInProgress) {
+    console.warn('[NutritionCalibration] Completion already in progress');
+    return getCalibrationData();
+  }
+  completionInProgress = true;
 
-    // Advance currentDay to the next uncompleted day
-    const dayIndex = CALIBRATION_DAYS.indexOf(day);
-    let advanced = false;
-    for (let i = dayIndex + 1; i < CALIBRATION_DAYS.length; i++) {
-      if (!data.days[CALIBRATION_DAYS[i]]?.completed) {
-        data.currentDay = CALIBRATION_DAYS[i];
-        advanced = true;
-        break;
-      }
-    }
-    // If no uncompleted day found after this one, check from the start
-    if (!advanced) {
-      for (let i = 0; i < CALIBRATION_DAYS.length; i++) {
+  try {
+    const data = getCalibrationData();
+    if (data.days[day]) {
+      data.days[day].completed = true;
+      data.days[day].completedAt = new Date().toISOString();
+
+      // Advance currentDay to the next uncompleted day
+      const dayIndex = CALIBRATION_DAYS.indexOf(day);
+      let advanced = false;
+      for (let i = dayIndex + 1; i < CALIBRATION_DAYS.length; i++) {
         if (!data.days[CALIBRATION_DAYS[i]]?.completed) {
           data.currentDay = CALIBRATION_DAYS[i];
           advanced = true;
           break;
         }
       }
-    }
+      // If no uncompleted day found after this one, check from the start
+      if (!advanced) {
+        for (let i = 0; i < CALIBRATION_DAYS.length; i++) {
+          if (!data.days[CALIBRATION_DAYS[i]]?.completed) {
+            data.currentDay = CALIBRATION_DAYS[i];
+            advanced = true;
+            break;
+          }
+        }
+      }
 
-    // Check if all days are complete
-    const allComplete = CALIBRATION_DAYS.every(d => data.days[d]?.completed);
-    if (allComplete && !data.completedAt) {
-      data.completedAt = new Date().toISOString();
-    }
+      // Check if all days are complete
+      const allComplete = CALIBRATION_DAYS.every(d => data.days[d]?.completed);
+      if (allComplete && !data.completedAt) {
+        data.completedAt = new Date().toISOString();
+      }
 
-    // FIX N3: Save calibration data BEFORE profile generation to avoid race condition
-    saveCalibrationData(data, true); // immediate sync — critical state change
+      // FIX N3: Save calibration data BEFORE profile generation to avoid race condition
+      saveCalibrationData(data, true); // immediate sync — critical state change
 
-    // Generate profile after calibration data is saved
-    if (allComplete && data.completedAt) {
-      generateNutritionProfile(data);
+      // Generate profile after calibration data is saved
+      if (allComplete && data.completedAt) {
+        generateNutritionProfile(data);
+      }
     }
+    return data;
+  } finally {
+    completionInProgress = false;
   }
-  return data;
 }
 
 /**
@@ -932,30 +946,15 @@ export function isCalibrationComplete() {
   // Primary check: completedAt flag
   if (data.completedAt) return true;
 
-  // SAFEGUARD: Check if all 5 days have 2+ meals with content
-  // This protects against data corruption where completedAt was lost
+  // Pure read check: count completed days without modifying state
+  // This prevents race conditions from side effects during reads
   const completedDaysCount = CALIBRATION_DAYS.filter(day => {
     const dayData = data.days[day];
     if (!dayData) return false;
-    if (dayData.completed) return true;
-    const filledMeals = (dayData.meals || []).filter(m => m.content && m.content.trim()).length;
-    return filledMeals >= 2;
+    return dayData.completed === true;
   }).length;
 
-  if (completedDaysCount >= 5) {
-    console.log('[NutritionCalibration] SAFEGUARD: completedAt missing but all 5 days have data. Treating as complete.');
-    // Auto-repair: set completedAt for future calls
-    data.completedAt = new Date().toISOString();
-    for (const day of CALIBRATION_DAYS) {
-      if (data.days[day]) {
-        data.days[day].completed = true;
-      }
-    }
-    saveCalibrationData(data, true);
-    return true;
-  }
-
-  return false;
+  return completedDaysCount >= 5;
 }
 
 /**
@@ -1183,11 +1182,30 @@ export function autoCompletePastDays() {
   if (data.completedAt) return; // already fully complete
   const todayIdx = CALIBRATION_DAYS.indexOf(today);
   let changed = false;
+
+  // Batch updates: mark all eligible past days as complete in one pass
   for (let i = 0; i < todayIdx; i++) {
     const day = CALIBRATION_DAYS[i];
     if (data.days[day] && !data.days[day].completed && canCompleteDay(day)) {
-      completeDay(day);
+      data.days[day].completed = true;
+      data.days[day].completedAt = new Date().toISOString();
       changed = true;
+    }
+  }
+
+  if (changed) {
+    // Check if all days are now complete
+    const allComplete = CALIBRATION_DAYS.every(d => data.days[d]?.completed);
+    if (allComplete && !data.completedAt) {
+      data.completedAt = new Date().toISOString();
+    }
+
+    // Single save for all batched updates
+    saveCalibrationData(data, true);
+
+    // Generate profile if calibration just completed
+    if (data.completedAt) {
+      generateNutritionProfile(data);
     }
   }
 }

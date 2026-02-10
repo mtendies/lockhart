@@ -47,6 +47,14 @@ class ErrorBoundary extends Component {
   }
 }
 
+// Global unhandled promise rejection handler
+if (typeof window !== 'undefined') {
+  window.addEventListener('unhandledrejection', (event) => {
+    console.error('[App] Unhandled promise rejection:', event.reason);
+    event.preventDefault();
+  });
+}
+
 import { getProfile, saveProfile } from './store';
 import { initBackupSystem, clearStaleDraft, restoreFromBackup, getBackup } from './dataBackup';
 import { getNotes, clearNotes } from './notesStore';
