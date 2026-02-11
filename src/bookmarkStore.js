@@ -43,6 +43,20 @@ export function removeBookmark(id) {
   return bookmarks;
 }
 
+/**
+ * Update a bookmark's properties (e.g., category)
+ * Triggers sync to Supabase
+ */
+export function updateBookmark(id, updates) {
+  const bookmarks = getBookmarks();
+  const idx = bookmarks.findIndex(b => b.id === id);
+  if (idx === -1) return bookmarks;
+
+  bookmarks[idx] = { ...bookmarks[idx], ...updates };
+  saveBookmarks(bookmarks);
+  return bookmarks;
+}
+
 export function clearBookmarks() {
   removeItem(STORAGE_KEY);
   syncBookmarks();

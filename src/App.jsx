@@ -60,7 +60,7 @@ import { initBackupSystem, clearStaleDraft, restoreFromBackup, getBackup } from 
 import { getNotes, clearNotes } from './notesStore';
 import { initializeProfiles } from './profileStore';
 import { getPendingCount, getPendingSuggestions, addSuggestion, dismissSuggestion } from './playbookSuggestionsStore';
-import { getPlaybook, savePlaybook } from './playbookStore';
+import { getPlaybook, savePlaybook, markPlaybookStale, clearPlaybookStale } from './playbookStore';
 import { analyzeProfileChange } from './profileChangeDetector';
 import { shouldShowSundayReminder, dismissReminderTemporarily, getDismissCount, skipThisWeek } from './checkInStore';
 import { getGroceryData } from './groceryStore';
@@ -346,6 +346,11 @@ function AppContent() {
         const result = await analyzeProfileChange(oldProfile, updatedProfile, playbook, pendingSuggestions);
 
         if (result) {
+          // Mark playbook as stale if significant changes detected
+          if (result.changedFields && result.changedFields.length > 0 && playbook) {
+            markPlaybookStale(result.changedFields);
+          }
+
           // Handle suggestions to dismiss (resolved issues)
           if (result.dismissSuggestionIds && result.dismissSuggestionIds.length > 0) {
             for (const id of result.dismissSuggestionIds) {

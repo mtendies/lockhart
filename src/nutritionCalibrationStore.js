@@ -784,6 +784,24 @@ export function removeMealFromDay(day, mealId) {
 }
 
 /**
+ * Restore a previously deleted meal to a specific day
+ */
+export function restoreMealToDay(day, meal) {
+  const data = getCalibrationData();
+  if (data.days[day]) {
+    const meals = data.days[day].meals || [];
+    // Insert at original order position or at end
+    const insertIdx = Math.min(meal.order ?? meals.length, meals.length);
+    const newMeals = [...meals];
+    newMeals.splice(insertIdx, 0, meal);
+    // Reorder all meals
+    data.days[day].meals = newMeals.map((m, idx) => ({ ...m, order: idx }));
+    saveCalibrationData(data);
+  }
+  return data;
+}
+
+/**
  * Reset a day's meals to the default pattern
  */
 export function resetDayToDefault(day) {

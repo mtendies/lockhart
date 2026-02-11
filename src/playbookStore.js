@@ -26,6 +26,44 @@ export function savePlaybook(playbook) {
   syncPlaybook();
 }
 
+/**
+ * Mark the playbook as potentially stale due to profile changes
+ */
+export function markPlaybookStale(changedFields = []) {
+  const playbook = getPlaybook();
+  if (!playbook) return;
+
+  playbook.stale = true;
+  playbook.staleReason = changedFields.length > 0
+    ? `Profile updated: ${changedFields.slice(0, 3).join(', ')}${changedFields.length > 3 ? '...' : ''}`
+    : 'Profile has been updated';
+  playbook.staleSince = new Date().toISOString();
+
+  savePlaybook(playbook);
+}
+
+/**
+ * Clear the stale flag (after regeneration or dismissal)
+ */
+export function clearPlaybookStale() {
+  const playbook = getPlaybook();
+  if (!playbook) return;
+
+  delete playbook.stale;
+  delete playbook.staleReason;
+  delete playbook.staleSince;
+
+  savePlaybook(playbook);
+}
+
+/**
+ * Check if playbook is marked as stale
+ */
+export function isPlaybookStale() {
+  const playbook = getPlaybook();
+  return playbook?.stale || false;
+}
+
 export function clearPlaybook() {
   removeItem(STORAGE_KEY);
 }

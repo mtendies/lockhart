@@ -587,6 +587,7 @@ import {
   reorderDayMeals,
   addMealToDay,
   removeMealFromDay,
+  restoreMealToDay,
   getDefaultMealPattern,
   saveDefaultMealPattern,
   hasSetupMealPattern,
@@ -837,10 +838,15 @@ function CalorieEstimatorPopup({ content, dayKey, mealId, onClose, onSaveCalorie
 
         {/* Scrollable content */}
         <div className="overflow-y-auto max-h-[calc(85vh-120px)] px-4 py-4 sm:px-5">
-          {/* Total */}
+          {/* Total with confidence - FIX #16 */}
           <div className="text-center mb-5 pb-4 border-b border-gray-100">
-            <p className={`text-4xl sm:text-5xl font-bold text-orange-600 ${aiLoading ? 'opacity-50' : ''}`}>{totalCalories}</p>
-            <p className="text-sm text-gray-500 mt-1">estimated calories</p>
+            <p className={`text-4xl sm:text-5xl font-bold text-orange-600 ${aiLoading ? 'opacity-50' : ''}`}>~{totalCalories}</p>
+            <p className="text-sm text-gray-500 mt-1">
+              estimated calories
+              <span className={`ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-xs ${confidence.color}`}>
+                ({confidence.text.toLowerCase()})
+              </span>
+            </p>
           </div>
 
           {/* Line-item breakdown - editable */}
@@ -2207,6 +2213,7 @@ export default function NutritionCalibration({ onComplete, compact = false, prof
   const [showMealSetup, setShowMealSetup] = useState(false);
   const [showTrackingOptions, setShowTrackingOptions] = useState(false);
   const [trackingMode, setTrackingModeState] = useState(() => getTrackingMode());
+  const [undoMeal, setUndoMeal] = useState(null); // { day, meal } for undo deletion
 
   // Check if calibration is complete but user hasn't chosen tracking mode
   const calibrationComplete = isCalibrationComplete();
@@ -2385,8 +2392,25 @@ export default function NutritionCalibration({ onComplete, compact = false, prof
   }
 
   function handleRemoveMeal(day, mealId) {
+    // Save meal for undo before removing
+    const currentData = getCalibrationData();
+    const mealToRemove = currentData.days[day]?.meals?.find(m => m.id === mealId);
+
     removeMealFromDay(day, mealId);
     setCalibrationData(getCalibrationData());
+
+    // Show undo toast for 5 seconds
+    if (mealToRemove) {
+      setUndoMeal({ day, meal: mealToRemove });
+      setTimeout(() => setUndoMeal(prev => prev?.meal?.id === mealId ? null : prev), 5000);
+    }
+  }
+
+  function handleUndoMealDelete() {
+    if (!undoMeal) return;
+    restoreMealToDay(undoMeal.day, undoMeal.meal);
+    setCalibrationData(getCalibrationData());
+    setUndoMeal(null);
   }
 
   function handleCompleteDay(day) {
@@ -2550,6 +2574,19 @@ export default function NutritionCalibration({ onComplete, compact = false, prof
           onSelect={handleSelectTrackingMode}
           onClose={() => setShowTrackingOptions(false)}
         />
+      )}
+
+      {/* Undo meal deletion toast */}
+      {undoMeal && (
+        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 bg-gray-800 text-white px-4 py-2 rounded-lg shadow-lg flex items-center gap-3 animate-slide-up">
+          <span className="text-sm">Meal removed</span>
+          <button
+            onClick={handleUndoMealDelete}
+            className="text-sm font-medium text-orange-300 hover:text-orange-200"
+          >
+            Undo
+          </button>
+        </div>
       )}
     </div>
   );

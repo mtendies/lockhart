@@ -157,6 +157,32 @@ function normalizeItemName(name) {
     .trim();
 }
 
+/**
+ * Check for duplicate items before adding
+ * Returns { duplicates: [{ name, existingCount }], newItems: [] }
+ */
+export function checkForDuplicates(items) {
+  const data = getGroceryData();
+  const duplicates = [];
+  const newItems = [];
+
+  for (const item of items) {
+    const normalized = normalizeItemName(item);
+    const existing = data.allItems.find(i => i.normalized === normalized);
+    if (existing) {
+      duplicates.push({
+        name: item,
+        existingName: existing.name,
+        existingCount: existing.count,
+      });
+    } else {
+      newItems.push(item);
+    }
+  }
+
+  return { duplicates, newItems };
+}
+
 export function formatOrderDate(dateStr) {
   const d = new Date(dateStr);
   return d.toLocaleDateString(undefined, {

@@ -115,7 +115,8 @@ export async function analyzeProfileChange(oldProfile, newProfile, playbook, pen
     // - dismissSuggestionIds: IDs of pending suggestions to dismiss
     // - resolved: boolean indicating issue was resolved
     // - message: acknowledgment message
-    return data;
+    // - changedFields: fields that were changed (for stale playbook marking)
+    return { ...data, changedFields };
   } catch (err) {
     console.error('Error analyzing profile change:', err);
     return null;

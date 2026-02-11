@@ -74,14 +74,37 @@ function saveInsights(insights) {
  * @param {string} insight.confidence - 'explicit' or 'inferred'
  * @returns {Object} The created insight with ID
  */
+/**
+ * Calculate similarity between two strings (Jaccard index of words)
+ */
+function calculateSimilarity(text1, text2) {
+  const normalize = (s) => s.toLowerCase().replace(/[^\w\s]/g, '').split(/\s+/).filter(w => w.length > 2);
+  const words1 = new Set(normalize(text1));
+  const words2 = new Set(normalize(text2));
+
+  if (words1.size === 0 || words2.size === 0) return 0;
+
+  const intersection = new Set([...words1].filter(w => words2.has(w)));
+  const union = new Set([...words1, ...words2]);
+
+  return intersection.size / union.size;
+}
+
 export function addLearnedInsight(insight) {
   const insights = getLearnedInsights();
 
-  // Check for duplicates (similar text in same category)
-  const isDuplicate = insights.some(existing =>
-    existing.category === insight.category &&
-    existing.text.toLowerCase() === insight.text.toLowerCase()
-  );
+  // Check for duplicates (exact match or high similarity in same category)
+  const isDuplicate = insights.some(existing => {
+    // Must be same category
+    if (existing.category !== insight.category) return false;
+
+    // Exact match
+    if (existing.text.toLowerCase() === insight.text.toLowerCase()) return true;
+
+    // Similarity check (threshold 0.7 = 70% word overlap)
+    const similarity = calculateSimilarity(existing.text, insight.text);
+    return similarity > 0.7;
+  });
 
   if (isDuplicate) {
     return null;

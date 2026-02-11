@@ -8,6 +8,10 @@ import { syncChats } from './lib/simpleSync';
 
 const STORAGE_KEY = 'health-advisor-chats';
 
+// FIX #14: Max messages per chat before archiving older ones
+const MAX_MESSAGES_PER_CHAT = 200;
+const ARCHIVE_THRESHOLD = 150; // Keep this many when trimming
+
 // Chat categories with colors
 // Blue=Fitness, Amber=Nutrition, Purple=Recovery, Green=Goals, Gray=General
 export const CHAT_CATEGORIES = {
@@ -326,14 +330,35 @@ export function updateChatMessages(chatId, messages) {
 
   if (index === -1) return null;
 
+  // FIX #14: Archive older messages if exceeding limit
+  let finalMessages = messages;
+  let archivedMessages = chats[index].archivedMessages || [];
+
+  if (messages.length > MAX_MESSAGES_PER_CHAT) {
+    const toArchive = messages.slice(0, messages.length - ARCHIVE_THRESHOLD);
+    finalMessages = messages.slice(messages.length - ARCHIVE_THRESHOLD);
+
+    // Add archived messages with metadata
+    const now = new Date().toISOString();
+    toArchive.forEach((msg, idx) => {
+      archivedMessages.push({
+        ...msg,
+        originalIndex: idx,
+        archivedAt: now,
+      });
+    });
+
+    console.log(`[MultiChatStore] Archived ${toArchive.length} old messages from chat ${chatId}`);
+  }
+
   // Update category based on all messages
-  const allText = messages.map(m => getContentText(m.content)).join(' ');
+  const allText = finalMessages.map(m => getContentText(m.content)).join(' ');
   const category = detectCategory(allText);
 
   // Update title if it's still "New Chat" and we have a user message
   let title = chats[index].title;
-  if (title === 'New Chat' && messages.length > 0) {
-    const firstUserMsg = messages.find(m => m.role === 'user');
+  if (title === 'New Chat' && finalMessages.length > 0) {
+    const firstUserMsg = finalMessages.find(m => m.role === 'user');
     if (firstUserMsg) {
       title = generateTitle(getContentText(firstUserMsg.content));
     }
@@ -341,7 +366,8 @@ export function updateChatMessages(chatId, messages) {
 
   chats[index] = {
     ...chats[index],
-    messages,
+    messages: finalMessages,
+    archivedMessages,
     category,
     title,
     lastActivity: new Date().toISOString(),
@@ -432,6 +458,48 @@ export function deleteChat(chatId) {
   const chats = getAllChats().filter(c => c.id !== chatId);
   saveChats(chats);
   // saveChats already syncs to Supabase (full array replaces old)
+}
+
+/**
+ * Clean up abandoned chats (empty or single-message chats older than 24 hours)
+ * @returns {number} Number of chats cleaned up
+ */
+export function cleanupAbandonedChats() {
+  const chats = getAllChats();
+  const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
+
+  const cleanedChats = chats.filter(chat => {
+    // Keep chats with more than 1 message
+    if (chat.messages && chat.messages.length > 1) return true;
+
+    // Keep recent chats (less than 24 hours old)
+    const lastActivity = new Date(chat.lastActivity || chat.createdAt).getTime();
+    if (lastActivity > oneDayAgo) return true;
+
+    // Remove empty or single-message chats older than 24 hours
+    return false;
+  });
+
+  const removedCount = chats.length - cleanedChats.length;
+  if (removedCount > 0) {
+    saveChats(cleanedChats);
+  }
+
+  return removedCount;
+}
+
+/**
+ * Get count of abandoned chats that would be cleaned up
+ */
+export function getAbandonedChatCount() {
+  const chats = getAllChats();
+  const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
+
+  return chats.filter(chat => {
+    if (chat.messages && chat.messages.length > 1) return false;
+    const lastActivity = new Date(chat.lastActivity || chat.createdAt).getTime();
+    return lastActivity <= oneDayAgo;
+  }).length;
 }
 
 /**

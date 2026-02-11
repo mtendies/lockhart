@@ -667,3 +667,40 @@ export const loadAllData = async (userId) => {
 
   return results;
 };
+
+/**
+ * Export all user data for GDPR compliance
+ * Downloads a JSON file containing all user data
+ */
+export const exportUserData = async (userId) => {
+  const allData = await loadAllData(userId);
+
+  const exportData = {
+    exportDate: new Date().toISOString(),
+    userId,
+    data: {
+      profile: allData.profile,
+      playbook: allData.playbook,
+      activities: allData.activities,
+      conversations: allData.conversations,
+      insights: allData.insights,
+      checkins: allData.checkins,
+      nutritionCalibration: allData.nutritionCalibration,
+      notes: allData.notes,
+      grocery: allData.grocery,
+    },
+  };
+
+  // Create downloadable file
+  const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `health-advisor-export-${new Date().toISOString().split('T')[0]}.json`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+
+  return exportData;
+};

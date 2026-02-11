@@ -1261,8 +1261,13 @@ function CaloriePopup({ estimate: fallbackEstimate, mealText, dayKey, mealId, on
         <div className="overflow-y-auto max-h-[calc(85vh-120px)] px-4 py-4 sm:px-5">
           {/* Total */}
           <div className="text-center mb-5 pb-4 border-b border-gray-100">
-            <p className={`text-4xl sm:text-5xl font-bold text-orange-600 ${aiLoading ? 'opacity-50' : ''}`}>{totalCalories}</p>
-            <p className="text-sm text-gray-500 mt-1">estimated calories</p>
+            <p className={`text-4xl sm:text-5xl font-bold text-orange-600 ${aiLoading ? 'opacity-50' : ''}`}>~{totalCalories}</p>
+            <p className="text-sm text-gray-500 mt-1">
+              estimated calories
+              <span className={`ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded text-xs ${confidence.color}`}>
+                ({confidence.text.toLowerCase()})
+              </span>
+            </p>
           </div>
 
           {/* Line-item breakdown - editable */}
@@ -3175,7 +3180,7 @@ function DetailedFocusGoalCard({ item, index, onEditTarget, onRefresh }) {
   const isComplete = item.progress?.complete;
   const hasProgress = item.progress?.current > 0;
   const progressPercent = item.progress?.trackable
-    ? Math.round((item.progress.current / item.progress.target) * 100)
+    ? Math.min(100, Math.round((item.progress.current / item.progress.target) * 100))
     : 0;
 
   // Color scheme - green only
@@ -3688,8 +3693,50 @@ function SyncIndicator({ syncStatus, onRefresh }) {
 }
 
 // Main HomePage Component
+// FIX #15: Skeleton loader component for initial data fetch
+function HomeSkeleton() {
+  return (
+    <div className="bg-gray-50/50 pb-8 animate-pulse">
+      <div className="px-4 pt-4 space-y-4">
+        {/* Greeting skeleton */}
+        <div className="h-8 bg-gray-200 rounded-lg w-48"></div>
+        <div className="h-4 bg-gray-200 rounded w-64"></div>
+
+        {/* Quick entry skeleton */}
+        <div className="bg-white rounded-2xl p-4 shadow-sm">
+          <div className="h-12 bg-gray-200 rounded-xl"></div>
+        </div>
+
+        {/* Calibration card skeleton */}
+        <div className="bg-white rounded-2xl p-5 shadow-sm space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="h-6 bg-gray-200 rounded w-40"></div>
+            <div className="h-6 bg-gray-200 rounded w-24"></div>
+          </div>
+          <div className="h-2 bg-gray-200 rounded-full"></div>
+          <div className="grid grid-cols-3 gap-3">
+            <div className="h-20 bg-gray-100 rounded-xl"></div>
+            <div className="h-20 bg-gray-100 rounded-xl"></div>
+            <div className="h-20 bg-gray-100 rounded-xl"></div>
+          </div>
+        </div>
+
+        {/* Goals skeleton */}
+        <div className="bg-white rounded-2xl p-5 shadow-sm space-y-3">
+          <div className="h-6 bg-gray-200 rounded w-32"></div>
+          <div className="space-y-2">
+            <div className="h-12 bg-gray-100 rounded-xl"></div>
+            <div className="h-12 bg-gray-100 rounded-xl"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function HomePage({ onNavigate, onOpenCheckIn, syncStatus, onRefresh }) {
   const [profile, setProfile] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
   const [showPlaybook, setShowPlaybook] = useState(false);
   const [expandedSections, setExpandedSections] = useState({
     principles: false,
@@ -3717,8 +3764,16 @@ export default function HomePage({ onNavigate, onOpenCheckIn, syncStatus, onRefr
   // Load profile on mount and when sync status changes to ready
   useEffect(() => {
     window.scrollTo(0, 0);
-    setProfile(getProfile());
+    const loadedProfile = getProfile();
+    setProfile(loadedProfile);
+    // FIX #15: Set loading to false once profile is loaded
+    setIsLoading(false);
   }, [syncStatus]);
+
+  // FIX #15: Show skeleton while loading
+  if (isLoading && !profile) {
+    return <HomeSkeleton />;
+  }
 
   // Pull-to-refresh handlers
   const handleTouchStart = (e) => {

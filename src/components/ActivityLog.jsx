@@ -85,6 +85,8 @@ function getSubTypeLabel(subType) {
   }
 }
 
+const ITEMS_PER_PAGE = 20;
+
 export default function ActivityLog({ onActivityDeleted, onClose, compact = false }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState('all');
@@ -95,6 +97,7 @@ export default function ActivityLog({ onActivityDeleted, onClose, compact = fals
   const [expandedId, setExpandedId] = useState(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [visibleCount, setVisibleCount] = useState(ITEMS_PER_PAGE);
 
   const activities = useMemo(() => {
     return getFilteredActivities({
@@ -105,6 +108,18 @@ export default function ActivityLog({ onActivityDeleted, onClose, compact = fals
       endDate: endDate || undefined,
     });
   }, [searchQuery, typeFilter, sourceFilter, startDate, endDate, refreshKey]);
+
+  // Reset pagination when filters change
+  useMemo(() => {
+    setVisibleCount(ITEMS_PER_PAGE);
+  }, [searchQuery, typeFilter, sourceFilter, startDate, endDate]);
+
+  // Paginated activities
+  const paginatedActivities = useMemo(() => {
+    return activities.slice(0, visibleCount);
+  }, [activities, visibleCount]);
+
+  const hasMore = visibleCount < activities.length;
 
   function handleDeleteClick(activity) {
     setDeleteTarget(activity);
@@ -129,8 +144,8 @@ export default function ActivityLog({ onActivityDeleted, onClose, compact = fals
 
   const hasFilters = typeFilter !== 'all' || sourceFilter !== 'all' || startDate || endDate;
 
-  // Group activities by date
-  const groupedByDate = activities.reduce((groups, activity) => {
+  // Group paginated activities by date
+  const groupedByDate = paginatedActivities.reduce((groups, activity) => {
     const date = activity.date;
     if (!groups[date]) {
       groups[date] = [];
@@ -140,6 +155,10 @@ export default function ActivityLog({ onActivityDeleted, onClose, compact = fals
   }, {});
 
   const sortedDates = Object.keys(groupedByDate).sort((a, b) => new Date(b) - new Date(a));
+
+  function loadMore() {
+    setVisibleCount(prev => prev + ITEMS_PER_PAGE);
+  }
 
   if (activities.length === 0 && !searchQuery && !hasFilters) {
     return (
@@ -315,92 +334,106 @@ export default function ActivityLog({ onActivityDeleted, onClose, compact = fals
             <p className="text-xs text-gray-400 mt-1">Try adjusting your filters</p>
           </div>
         ) : (
-          sortedDates.map(date => (
-            <div key={date}>
-              <h3 className="text-sm font-medium text-gray-500 mb-3 flex items-center gap-2">
-                <Calendar size={14} />
-                {formatDate(date)}
-              </h3>
-              <div className="space-y-2">
-                {groupedByDate[date].map(activity => {
-                  const sourceLabel = SOURCE_CONFIG[activity.source]?.label || activity.source;
-                  return (
-                    <div
-                      key={activity.id}
-                      className={`rounded-xl border p-3 ${getActivityColor(activity.type)}`}
-                    >
-                      <div className="flex items-start gap-3">
-                        <div className="p-2 bg-white rounded-lg shadow-sm">
-                          {getActivityIcon(activity.type, activity.subType)}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-medium text-gray-900">
-                              {activity.summary || activity.rawText}
-                            </span>
-                            {activity.subType && (
-                              <span className="text-xs px-2 py-0.5 bg-white rounded-full text-gray-600">
-                                {getSubTypeLabel(activity.subType)}
+          <>
+            {sortedDates.map(date => (
+              <div key={date}>
+                <h3 className="text-sm font-medium text-gray-500 mb-3 flex items-center gap-2">
+                  <Calendar size={14} />
+                  {formatDate(date)}
+                </h3>
+                <div className="space-y-2">
+                  {groupedByDate[date].map(activity => {
+                    const sourceLabel = SOURCE_CONFIG[activity.source]?.label || activity.source;
+                    return (
+                      <div
+                        key={activity.id}
+                        className={`rounded-xl border p-3 ${getActivityColor(activity.type)}`}
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className="p-2 bg-white rounded-lg shadow-sm">
+                            {getActivityIcon(activity.type, activity.subType)}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-medium text-gray-900">
+                                {activity.summary || activity.rawText}
                               </span>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-3 mt-1 text-xs text-gray-500 flex-wrap">
-                            <span className="flex items-center gap-1">
-                              <Clock size={12} />
-                              {formatTime(activity.timestamp)}
-                            </span>
-                            {sourceLabel && (
-                              <span className="text-gray-400">via {sourceLabel}</span>
-                            )}
-                          </div>
-
-                          {/* Expandable details */}
-                          {activity.rawText && activity.rawText !== activity.summary && (
-                            <button
-                              onClick={() => setExpandedId(expandedId === activity.id ? null : activity.id)}
-                              className="mt-2 text-xs text-gray-500 hover:text-gray-700 flex items-center gap-1"
-                            >
-                              {expandedId === activity.id ? (
-                                <>
-                                  <ChevronUp size={12} />
-                                  Hide details
-                                </>
-                              ) : (
-                                <>
-                                  <ChevronDown size={12} />
-                                  Show details
-                                </>
-                              )}
-                            </button>
-                          )}
-
-                          {expandedId === activity.id && (
-                            <div className="mt-2 p-2 bg-white/50 rounded-lg text-xs text-gray-600 space-y-1">
-                              <p><span className="font-medium">Original:</span> "{activity.rawText}"</p>
-                              <p><span className="font-medium">Type:</span> {activity.type}{activity.subType ? ` / ${activity.subType}` : ''}</p>
-                              {activity.data && Object.keys(activity.data).length > 0 && (
-                                <p><span className="font-medium">Data:</span> {JSON.stringify(activity.data)}</p>
-                              )}
-                              {activity.goalConnections?.length > 0 && (
-                                <p><span className="font-medium">Goal connections:</span> Focus items #{activity.goalConnections.map(i => i + 1).join(', #')}</p>
+                              {activity.subType && (
+                                <span className="text-xs px-2 py-0.5 bg-white rounded-full text-gray-600">
+                                  {getSubTypeLabel(activity.subType)}
+                                </span>
                               )}
                             </div>
-                          )}
+                            <div className="flex items-center gap-3 mt-1 text-xs text-gray-500 flex-wrap">
+                              <span className="flex items-center gap-1">
+                                <Clock size={12} />
+                                {formatTime(activity.timestamp)}
+                              </span>
+                              {sourceLabel && (
+                                <span className="text-gray-400">via {sourceLabel}</span>
+                              )}
+                            </div>
+
+                            {/* Expandable details */}
+                            {activity.rawText && activity.rawText !== activity.summary && (
+                              <button
+                                onClick={() => setExpandedId(expandedId === activity.id ? null : activity.id)}
+                                className="mt-2 text-xs text-gray-500 hover:text-gray-700 flex items-center gap-1"
+                              >
+                                {expandedId === activity.id ? (
+                                  <>
+                                    <ChevronUp size={12} />
+                                    Hide details
+                                  </>
+                                ) : (
+                                  <>
+                                    <ChevronDown size={12} />
+                                    Show details
+                                  </>
+                                )}
+                              </button>
+                            )}
+
+                            {expandedId === activity.id && (
+                              <div className="mt-2 p-2 bg-white/50 rounded-lg text-xs text-gray-600 space-y-1">
+                                <p><span className="font-medium">Original:</span> "{activity.rawText}"</p>
+                                <p><span className="font-medium">Type:</span> {activity.type}{activity.subType ? ` / ${activity.subType}` : ''}</p>
+                                {activity.data && Object.keys(activity.data).length > 0 && (
+                                  <p><span className="font-medium">Data:</span> {JSON.stringify(activity.data)}</p>
+                                )}
+                                {activity.goalConnections?.length > 0 && (
+                                  <p><span className="font-medium">Goal connections:</span> Focus items #{activity.goalConnections.map(i => i + 1).join(', #')}</p>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                          <button
+                            onClick={() => handleDeleteClick(activity)}
+                            className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-white rounded-lg transition-colors"
+                            title="Delete activity"
+                          >
+                            <Trash2 size={14} />
+                          </button>
                         </div>
-                        <button
-                          onClick={() => handleDeleteClick(activity)}
-                          className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-white rounded-lg transition-colors"
-                          title="Delete activity"
-                        >
-                          <Trash2 size={14} />
-                        </button>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          ))
+            ))}
+
+            {/* Load more button */}
+            {hasMore && (
+              <div className="text-center py-4">
+                <button
+                  onClick={loadMore}
+                  className="px-4 py-2 text-sm text-primary-600 hover:text-primary-700 hover:bg-primary-50 rounded-lg transition-colors"
+                >
+                  Load more ({activities.length - visibleCount} remaining)
+                </button>
+              </div>
+            )}
+          </>
         )}
       </div>
 

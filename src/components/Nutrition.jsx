@@ -31,6 +31,7 @@ import {
   formatOrderDate,
   getHabitsFormed,
   getWins,
+  checkForDuplicates,
 } from '../groceryStore';
 import { getPendingSuggestions } from '../playbookSuggestionsStore';
 import { recordSwapPurchase, getActiveSwaps, getSwaps, logSwap, detectCategory, SWAP_STATUS, SWAP_SOURCES, activatePendingSwap } from '../swapStore';
@@ -56,6 +57,7 @@ export default function Nutrition({ profile, playbook, onGroceryDataChange, onPl
   const [selectedSmartSwaps, setSelectedSmartSwaps] = useState({});
   const [swapToast, setSwapToast] = useState(null);
   const [swapsRefreshKey, setSwapsRefreshKey] = useState(0);
+  const [duplicateWarning, setDuplicateWarning] = useState(null); // { duplicates: [], newItems: [] }
   const fileInputRef = useRef(null);
   const swapsSectionRef = useRef(null);
 
@@ -156,6 +158,46 @@ export default function Nutrition({ profile, playbook, onGroceryDataChange, onPl
     setSwapsRefreshKey(k => k + 1);
   }
 
+  // Compress image before upload (max 1920px, quality 0.8)
+  async function compressImage(file, maxSize = 1920, quality = 0.8) {
+    // Skip compression for non-images or PDFs
+    if (!file.type.startsWith('image/') || file.type === 'application/pdf') {
+      return file;
+    }
+
+    return new Promise((resolve) => {
+      const img = new Image();
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+
+      img.onload = () => {
+        let { width, height } = img;
+
+        // Scale down if larger than maxSize
+        if (width > maxSize || height > maxSize) {
+          if (width > height) {
+            height = (height * maxSize) / width;
+            width = maxSize;
+          } else {
+            width = (width * maxSize) / height;
+            height = maxSize;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        ctx.drawImage(img, 0, 0, width, height);
+
+        canvas.toBlob((blob) => {
+          resolve(new File([blob], file.name, { type: 'image/jpeg' }));
+        }, 'image/jpeg', quality);
+      };
+
+      img.onerror = () => resolve(file); // Fallback to original on error
+      img.src = URL.createObjectURL(file);
+    });
+  }
+
   async function handleFileUpload(event) {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -164,18 +206,21 @@ export default function Nutrition({ profile, playbook, onGroceryDataChange, onPl
     setUploadError(null);
 
     try {
+      // Compress image if applicable
+      const processedFile = await compressImage(file);
+
       // Convert file to base64 — the API expects { fileData, fileType }
       const fileData = await new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(reader.result.split(',')[1]); // strip data:...;base64, prefix
         reader.onerror = reject;
-        reader.readAsDataURL(file);
+        reader.readAsDataURL(processedFile);
       });
 
       const res = await fetch('/api/grocery', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'parse', fileData, fileType: file.type, source: selectedSource }),
+        body: JSON.stringify({ action: 'parse', fileData, fileType: processedFile.type, source: selectedSource }),
       });
 
       if (!res.ok) throw new Error(`Server error: ${res.status}`);
@@ -226,6 +271,9 @@ export default function Nutrition({ profile, playbook, onGroceryDataChange, onPl
       return;
     }
 
+    // Check for duplicates before adding
+    const { duplicates, newItems } = checkForDuplicates(items);
+
     const newData = addGroceryOrder({
       items,
       source: selectedSource,
@@ -235,6 +283,12 @@ export default function Nutrition({ profile, playbook, onGroceryDataChange, onPl
     setManualItems('');
     setShowManualInput(false);
     setUploadError(null);
+
+    // Show duplicate warning if any items already existed
+    if (duplicates.length > 0) {
+      setDuplicateWarning({ duplicates, newItems });
+      setTimeout(() => setDuplicateWarning(null), 5000);
+    }
 
     // Check for swap confirmations/reversions
     checkSwapsInPurchase(items);
@@ -378,6 +432,20 @@ export default function Nutrition({ profile, playbook, onGroceryDataChange, onPl
           <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 bg-gray-900 text-white px-4 py-2 rounded-lg shadow-lg flex items-center gap-2 animate-fade-in">
             <Check size={16} className="text-emerald-400" />
             <span className="text-sm">{swapToast}</span>
+          </div>
+        )}
+
+        {/* Duplicate items warning */}
+        {duplicateWarning && duplicateWarning.duplicates.length > 0 && (
+          <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 bg-amber-600 text-white px-4 py-3 rounded-lg shadow-lg max-w-sm animate-fade-in">
+            <p className="text-sm font-medium mb-1">
+              {duplicateWarning.duplicates.length} item{duplicateWarning.duplicates.length > 1 ? 's' : ''} already in your list
+            </p>
+            <p className="text-xs text-amber-100">
+              {duplicateWarning.duplicates.slice(0, 3).map(d => d.name).join(', ')}
+              {duplicateWarning.duplicates.length > 3 && ` +${duplicateWarning.duplicates.length - 3} more`}
+              {' '} — purchase count updated
+            </p>
           </div>
         )}
 
