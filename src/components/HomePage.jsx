@@ -2394,6 +2394,39 @@ function GoalHistoryModal({ onClose }) {
   const streaks = getGoalStreaks();
   const currentWeek = getCurrentWeekOf();
 
+  // FIX #32: Prepare chart data for visualization
+  const chartData = useMemo(() => {
+    const weeks = [];
+
+    // Add current week
+    const currentCompleted = currentGoals.filter(g => g.status === 'completed').length;
+    const currentTotal = currentGoals.length;
+    if (currentTotal > 0) {
+      weeks.push({
+        label: 'This week',
+        completed: currentCompleted,
+        total: currentTotal,
+        percentage: Math.round((currentCompleted / currentTotal) * 100),
+      });
+    }
+
+    // Add historical weeks (up to 7)
+    history.slice(0, 7).forEach((week, i) => {
+      const completed = week.goals.filter(g => g.status === 'completed').length;
+      const total = week.goals.length;
+      if (total > 0) {
+        weeks.push({
+          label: i === 0 ? 'Last week' : new Date(week.weekOf + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+          completed,
+          total,
+          percentage: Math.round((completed / total) * 100),
+        });
+      }
+    });
+
+    return weeks.reverse(); // Show oldest to newest
+  }, [history, currentGoals]);
+
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center" onClick={onClose}>
       <div className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full sm:max-w-md max-h-[85vh] overflow-hidden"
@@ -2409,13 +2442,33 @@ function GoalHistoryModal({ onClose }) {
         </div>
 
         <div className="overflow-y-auto max-h-[calc(85vh-60px)] px-4 py-4 space-y-5">
+          {/* Completion chart */}
+          {chartData.length > 1 && (
+            <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl p-4">
+              <p className="text-xs font-semibold text-green-700 uppercase tracking-wide mb-3">Completion Rate</p>
+              <div className="flex items-end gap-1 h-20">
+                {chartData.map((week, i) => (
+                  <div key={i} className="flex-1 flex flex-col items-center">
+                    <div className="w-full bg-green-200 rounded-t relative" style={{ height: `${week.percentage}%`, minHeight: week.percentage > 0 ? '4px' : '0' }}>
+                      <div className="absolute inset-0 bg-green-500 rounded-t" />
+                    </div>
+                    <span className="text-[9px] text-green-700 mt-1 truncate w-full text-center">{week.label}</span>
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs text-green-600 mt-2 text-center">
+                {chartData.length > 0 && `Average: ${Math.round(chartData.reduce((sum, w) => sum + w.percentage, 0) / chartData.length)}%`}
+              </p>
+            </div>
+          )}
+
           {/* Streaks */}
           {streaks.length > 0 && (
             <div className="bg-amber-50 rounded-xl p-3">
               <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide mb-2">Streaks</p>
               {streaks.map((s, i) => (
                 <p key={i} className="text-sm text-amber-800">
-                  \ud83d\udd25 {s.text}: {s.weeks} weeks running
+                  🔥 {s.text}: {s.weeks} weeks running
                 </p>
               ))}
             </div>

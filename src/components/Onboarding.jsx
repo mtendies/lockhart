@@ -332,6 +332,31 @@ export default function Onboarding({ onComplete, initialData, onCancel }) {
     onComplete({ ...data, onboardingDepth: depth, onboardedAt: new Date().toISOString() });
   }
 
+  // FIX #30: Validate required fields for current step
+  function getValidationErrors() {
+    const errors = {};
+    const currentStepId = steps[step]?.id;
+
+    if (currentStepId === 'personal') {
+      if (!data.name?.trim()) errors.name = 'Name is required';
+      if (!data.age?.trim()) errors.age = 'Age is required';
+      if (!data.weight?.trim()) errors.weight = 'Weight is required';
+      if (!data.height?.trim() && !data.heightFeet?.trim()) errors.height = 'Height is required';
+    }
+
+    if (currentStepId === 'goals') {
+      // FIX #30: goals is an array, check length instead of trim
+      if (!data.goals || (Array.isArray(data.goals) ? data.goals.length === 0 : !data.goals.trim())) {
+        errors.goals = 'Please select at least one health goal';
+      }
+    }
+
+    return errors;
+  }
+
+  const validationErrors = getValidationErrors();
+  const hasErrors = Object.keys(validationErrors).length > 0;
+
   function handleRecoverData() {
     if (restoreFromBackup()) {
       // Reload the page to pick up recovered data
@@ -512,16 +537,26 @@ export default function Onboarding({ onComplete, initialData, onCancel }) {
           {isLastStep ? (
             <button
               onClick={handleSubmit}
+              disabled={hasErrors}
               data-testid="onboarding-submit-button"
-              className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-primary-500 to-primary-600 text-white rounded-xl font-medium shadow-md hover:shadow-lg hover:from-primary-600 hover:to-primary-700 transition-all"
+              className={`flex items-center gap-2 px-6 py-2.5 rounded-xl font-medium shadow-md transition-all ${
+                hasErrors
+                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                  : 'bg-gradient-to-r from-primary-500 to-primary-600 text-white hover:shadow-lg hover:from-primary-600 hover:to-primary-700'
+              }`}
             >
               {isEditing ? 'Save Changes' : 'Complete Setup'}
             </button>
           ) : (
             <button
               onClick={next}
+              disabled={hasErrors}
               data-testid="onboarding-next-button"
-              className="flex items-center gap-2 px-5 py-2.5 bg-primary-500 text-white rounded-xl font-medium hover:bg-primary-600 transition-all"
+              className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium transition-all ${
+                hasErrors
+                  ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                  : 'bg-primary-500 text-white hover:bg-primary-600'
+              }`}
             >
               Next <ChevronRight size={18} />
             </button>

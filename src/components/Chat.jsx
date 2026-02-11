@@ -234,6 +234,10 @@ export default function Chat({
   const messagesContainerRef = useRef(null);
   const thinkingIntervalRef = useRef(null);
 
+  // FIX #33: Rate limiting - 2 second cooldown for chat API calls
+  const lastChatCallTimeRef = useRef(0);
+  const CHAT_COOLDOWN_MS = 2000;
+
   // Initialize chats
   useEffect(() => {
     try {
@@ -733,6 +737,14 @@ export default function Chat({
   // Send message
   async function sendMessage(text) {
     if (!text || loading) return;
+
+    // FIX #33: Rate limiting - check cooldown before making API call
+    const now = Date.now();
+    if (now - lastChatCallTimeRef.current < CHAT_COOLDOWN_MS) {
+      console.log('[Chat] Rate limited, please wait');
+      return;
+    }
+    lastChatCallTimeRef.current = now;
 
     // Detect and log activity from user message
     detectAndLogActivity(text);

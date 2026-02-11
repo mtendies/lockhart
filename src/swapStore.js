@@ -59,9 +59,9 @@ export const CATEGORY_LABELS = {
 export function getSwapData() {
   try {
     const saved = getItem(STORAGE_KEY);
-    return saved ? JSON.parse(saved) : { swaps: [], stats: {} };
+    return saved ? JSON.parse(saved) : { swaps: [], stats: {}, history: [] };
   } catch {
-    return { swaps: [], stats: {} };
+    return { swaps: [], stats: {}, history: [] };
   }
 }
 
@@ -203,6 +203,54 @@ export function deleteSwap(id) {
   const data = getSwapData();
   data.swaps = data.swaps.filter(s => s.id !== id);
   saveSwapData(data);
+}
+
+/**
+ * FIX #31: Add entry to swap history when user accepts a swap
+ */
+export function recordSwapAccepted(originalProduct, suggestion, source = 'grocery') {
+  const data = getSwapData();
+  if (!data.history) data.history = [];
+
+  data.history.unshift({
+    id: `hist-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+    original: originalProduct,
+    suggestion: suggestion,
+    date: new Date().toISOString(),
+    helpful: null, // User can mark later
+    source,
+  });
+
+  // Keep only last 100 history entries
+  if (data.history.length > 100) {
+    data.history = data.history.slice(0, 100);
+  }
+
+  saveSwapData(data);
+  return data.history[0];
+}
+
+/**
+ * Get swap history
+ */
+export function getSwapHistory(limit = 50) {
+  const data = getSwapData();
+  return (data.history || []).slice(0, limit);
+}
+
+/**
+ * Mark a swap history entry as helpful/not helpful
+ */
+export function markSwapHelpful(historyId, helpful) {
+  const data = getSwapData();
+  if (!data.history) return null;
+
+  const index = data.history.findIndex(h => h.id === historyId);
+  if (index === -1) return null;
+
+  data.history[index].helpful = helpful;
+  saveSwapData(data);
+  return data.history[index];
 }
 
 /**

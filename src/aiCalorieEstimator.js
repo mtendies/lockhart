@@ -14,6 +14,10 @@ import { getRecentOrders } from './groceryStore';
 const MAX_CACHE_SIZE = 500;
 const cache = new Map();
 
+// FIX #33: Rate limiting - 3 second cooldown for calorie estimation
+const CALORIE_COOLDOWN_MS = 3000;
+let lastCalorieCallTime = 0;
+
 // LRU cache helper: move key to end (most recent) and enforce size limit
 function cacheSet(key, value) {
   // Delete and re-add to make it most recent (Map maintains insertion order)
@@ -149,6 +153,16 @@ export async function estimateCaloriesAI(text) {
   if (cached) {
     return { estimate: cached, isAI: cached.isAI !== false };
   }
+
+  // FIX #33: Rate limiting - check cooldown before making API call
+  const now = Date.now();
+  if (now - lastCalorieCallTime < CALORIE_COOLDOWN_MS) {
+    console.log('[AICalorie] Rate limited, using rule-based fallback');
+    const fallback = estimateCaloriesRuleBased(text);
+    fallback.isAI = false;
+    return { estimate: fallback, isAI: false, throttled: true };
+  }
+  lastCalorieCallTime = now;
 
   try {
     // Get recent grocery items for context

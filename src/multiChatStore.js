@@ -10,7 +10,6 @@ const STORAGE_KEY = 'health-advisor-chats';
 
 // FIX #14: Max messages per chat before archiving older ones
 const MAX_MESSAGES_PER_CHAT = 200;
-const ARCHIVE_THRESHOLD = 150; // Keep this many when trimming
 
 // Chat categories with colors
 // Blue=Fitness, Amber=Nutrition, Purple=Recovery, Green=Goals, Gray=General
@@ -330,26 +329,10 @@ export function updateChatMessages(chatId, messages) {
 
   if (index === -1) return null;
 
-  // FIX #14: Archive older messages if exceeding limit
-  let finalMessages = messages;
-  let archivedMessages = chats[index].archivedMessages || [];
-
-  if (messages.length > MAX_MESSAGES_PER_CHAT) {
-    const toArchive = messages.slice(0, messages.length - ARCHIVE_THRESHOLD);
-    finalMessages = messages.slice(messages.length - ARCHIVE_THRESHOLD);
-
-    // Add archived messages with metadata
-    const now = new Date().toISOString();
-    toArchive.forEach((msg, idx) => {
-      archivedMessages.push({
-        ...msg,
-        originalIndex: idx,
-        archivedAt: now,
-      });
-    });
-
-    console.log(`[MultiChatStore] Archived ${toArchive.length} old messages from chat ${chatId}`);
-  }
+  // FIX #14: Trim to max 200 messages (oldest removed first)
+  const finalMessages = messages.length > MAX_MESSAGES_PER_CHAT
+    ? messages.slice(-MAX_MESSAGES_PER_CHAT)
+    : messages;
 
   // Update category based on all messages
   const allText = finalMessages.map(m => getContentText(m.content)).join(' ');
@@ -367,7 +350,6 @@ export function updateChatMessages(chatId, messages) {
   chats[index] = {
     ...chats[index],
     messages: finalMessages,
-    archivedMessages,
     category,
     title,
     lastActivity: new Date().toISOString(),

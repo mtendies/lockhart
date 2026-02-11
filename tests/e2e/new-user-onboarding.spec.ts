@@ -84,12 +84,12 @@ test.describe('New User Onboarding', () => {
     await page.waitForTimeout(500);
 
     // Step 3: Goals (last step for Chill mode)
-    // Select at least one goal if required
-    const goalCheckboxes = page.locator('input[type="checkbox"]');
-    const goalCount = await goalCheckboxes.count();
-    if (goalCount > 0) {
-      await goalCheckboxes.first().check();
+    // Select at least one goal - goals are buttons, not checkboxes
+    const goalButton = page.getByRole('button', { name: /General Health/i });
+    if (await goalButton.isVisible()) {
+      await goalButton.click();
     }
+    await page.waitForTimeout(300);
 
     // Complete setup
     await page.click('[data-testid="onboarding-submit-button"]');

@@ -119,8 +119,8 @@ export default function Header({
     <>
     <header className={`sticky top-0 z-40 backdrop-blur-sm border-b ${
       isTestProfile
-        ? 'bg-violet-50/90 border-violet-200'
-        : 'bg-white/90 border-gray-100'
+        ? 'bg-violet-50/90 border-violet-200 dark:bg-violet-900/90 dark:border-violet-700'
+        : 'bg-white/90 dark:bg-gray-900/90 border-gray-100 dark:border-gray-800'
     }`}>
       {/* Test Profile Banner */}
       {isTestProfile && (
@@ -169,7 +169,7 @@ export default function Header({
 
             {/* Dropdown Menu - FIX M2: max-w to prevent viewport overflow on mobile */}
             {dropdownOpen && (
-              <div className="absolute right-0 top-full mt-2 w-64 max-w-[calc(100vw-2rem)] bg-white rounded-xl shadow-lg border border-gray-200 py-2 z-50 animate-fade-in">
+              <div className="absolute right-0 top-full mt-2 w-64 max-w-[calc(100vw-2rem)] bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700 py-2 z-50 animate-fade-in">
                 {/* Profile Header */}
                 <div className="px-4 py-3 border-b border-gray-100">
                   <div className="flex items-center gap-3">

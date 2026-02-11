@@ -13,7 +13,7 @@ export default function BottomNav({ currentView, onNavigate }) {
 
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50 safe-area-bottom"
+      className="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700 z-50 safe-area-bottom"
       data-testid="bottom-nav"
       role="navigation"
       aria-label="Main navigation"
