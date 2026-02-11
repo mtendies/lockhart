@@ -1,9 +1,11 @@
-import { useState, useEffect, useRef, Component } from 'react';
+import { useState, useEffect, useRef, Component, lazy, Suspense } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Auth from './components/Auth';
 import PreOnboardingIntro from './components/PreOnboardingIntro';
 import FeedbackButton from './components/FeedbackButton';
-import AdminFeedback from './components/AdminFeedback';
+
+// FIX #44: Lazy load less frequently used components to reduce bundle size
+const AdminFeedback = lazy(() => import('./components/AdminFeedback'));
 import * as dataService from './lib/dataService';
 import { useSimpleSync } from './hooks/useSimpleSync';
 import { migrateToNewSync, verifyMigration, debugLocalStorage } from './lib/migrateSyncData';
@@ -65,8 +67,9 @@ import { analyzeProfileChange } from './profileChangeDetector';
 import { shouldShowSundayReminder, dismissReminderTemporarily, getDismissCount, skipThisWeek } from './checkInStore';
 import { getGroceryData } from './groceryStore';
 import { getActivitiesThisWeek } from './activityLogStore';
+import { initializeNotifications } from './lib/notifications';
 
-// Components
+// Core components (always needed)
 import Onboarding from './components/Onboarding';
 import Header from './components/Header';
 import BottomNav from './components/BottomNav';
@@ -74,15 +77,26 @@ import HomePage from './components/HomePage';
 import AdvisorPage from './components/AdvisorPage';
 import Nutrition from './components/Nutrition';
 import TrainingPage from './components/TrainingPage';
-import ProfileView from './components/ProfileView';
-import WeeklyCheckIn from './components/WeeklyCheckIn';
 import SundayReminderModal from './components/SundayReminderModal';
-import DevTools from './components/DevTools';
 import Tutorial from './components/Tutorial';
 import ProfileSwitcherModal from './components/ProfileSwitcherModal';
-import LearnedInsightsPage from './components/LearnedInsightsPage';
 import { InsightNotificationContainer } from './components/InsightNotification';
 import { getLearnedInsights } from './learnedInsightsStore';
+
+// FIX #44: Lazy load infrequently used components
+const ProfileView = lazy(() => import('./components/ProfileView'));
+const WeeklyCheckIn = lazy(() => import('./components/WeeklyCheckIn'));
+const DevTools = lazy(() => import('./components/DevTools'));
+const LearnedInsightsPage = lazy(() => import('./components/LearnedInsightsPage'));
+
+// Loading fallback for lazy components
+function LazyLoadingFallback() {
+  return (
+    <div className="flex items-center justify-center p-8">
+      <div className="w-6 h-6 border-2 border-primary-500 border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
+}
 
 function AppContent() {
   const { user, loading: authLoading, signOut } = useAuth();
@@ -198,6 +212,9 @@ function AppContent() {
     // Initialize backup system and clear stale drafts
     clearStaleDraft();
     initBackupSystem();
+
+    // Initialize notification reminders
+    initializeNotifications();
 
     // Try to load profile, with backup recovery if needed
     let saved = getProfile();
@@ -546,7 +563,9 @@ function AppContent() {
           onCancel={editingProfile ? () => setEditingProfile(false) : undefined}
         />
         {/* Dev Tools available even during onboarding */}
-        <DevTools />
+        <Suspense fallback={null}>
+          <DevTools />
+        </Suspense>
         {/* Feedback button during onboarding */}
         <FeedbackButton currentPage="onboarding" />
       </>
@@ -675,26 +694,32 @@ function AppContent() {
 
           {view === 'profile' && (
             <div className="flex-1 overflow-y-auto">
-              <ProfileView
-                profile={profile}
-                onEditProfile={() => setEditingProfile(true)}
-                onNavigateToChat={handleNavigateToChat}
-              />
+              <Suspense fallback={<LazyLoadingFallback />}>
+                <ProfileView
+                  profile={profile}
+                  onEditProfile={() => setEditingProfile(true)}
+                  onNavigateToChat={handleNavigateToChat}
+                />
+              </Suspense>
             </div>
           )}
 
           {view === 'learned' && (
             <div className="flex-1 overflow-y-auto">
-              <LearnedInsightsPage
-                onNavigateToChat={handleNavigateToChat}
-                onBack={() => setView('profile')}
-              />
+              <Suspense fallback={<LazyLoadingFallback />}>
+                <LearnedInsightsPage
+                  onNavigateToChat={handleNavigateToChat}
+                  onBack={() => setView('profile')}
+                />
+              </Suspense>
             </div>
           )}
 
           {view === 'admin-feedback' && (
             <div className="flex-1 overflow-y-auto">
-              <AdminFeedback onBack={() => setView('home')} />
+              <Suspense fallback={<LazyLoadingFallback />}>
+                <AdminFeedback onBack={() => setView('home')} />
+              </Suspense>
             </div>
           )}
 
@@ -732,13 +757,15 @@ function AppContent() {
 
         {/* Weekly Check-In Modal */}
         {showCheckInModal && (
-          <WeeklyCheckIn
-            profile={profile}
-            playbook={playbook}
-            onCheckInComplete={handleCheckInComplete}
-            onClose={handleCloseCheckIn}
-            analyzingCheckIn={analyzingCheckIn}
-          />
+          <Suspense fallback={<LazyLoadingFallback />}>
+            <WeeklyCheckIn
+              profile={profile}
+              playbook={playbook}
+              onCheckInComplete={handleCheckInComplete}
+              onClose={handleCloseCheckIn}
+              analyzingCheckIn={analyzingCheckIn}
+            />
+          </Suspense>
         )}
 
         {/* Profile Switcher Modal */}
@@ -751,10 +778,12 @@ function AppContent() {
 
         {/* Dev Tools Modal */}
         {showDevTools && (
-          <DevTools
-            isModal={true}
-            onClose={() => setShowDevTools(false)}
-          />
+          <Suspense fallback={null}>
+            <DevTools
+              isModal={true}
+              onClose={() => setShowDevTools(false)}
+            />
+          </Suspense>
         )}
 
         {/* Tutorial overlay */}
@@ -839,7 +868,9 @@ function AuthenticatedApp() {
       <>
         <Auth />
         {/* DevTools available on auth screen for importing legacy data */}
-        <DevTools />
+        <Suspense fallback={null}>
+          <DevTools />
+        </Suspense>
         <FeedbackButton currentPage="auth" />
       </>
     );
