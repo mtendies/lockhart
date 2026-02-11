@@ -1277,16 +1277,16 @@ function ExpandingTextarea({ value, onChange, placeholder, disabled, onSave }) {
     const val = e.target.value;
     setLocalValue(val);
     debouncedSave(val);
-    // Auto-expand textarea
+    // Auto-expand textarea with max height of 300px
     e.target.style.height = 'auto';
-    e.target.style.height = e.target.scrollHeight + 'px';
+    e.target.style.height = Math.min(e.target.scrollHeight, 300) + 'px';
   }
 
   // Auto-size on initial load and when value changes externally
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
-      textareaRef.current.style.height = textareaRef.current.scrollHeight + 'px';
+      textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 300) + 'px';
     }
   }, [localValue]);
 

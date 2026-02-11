@@ -46,6 +46,9 @@ function MealCaloriePopup({ meal, onClose, onSave }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(meal.calories || 0);
+  const [portionBreakdown, setPortionBreakdown] = useState([]);
+  const [showBreakdown, setShowBreakdown] = useState(true);
+  const [usedGroceryContext, setUsedGroceryContext] = useState(false);
 
   useEffect(() => {
     async function fetchEstimate() {
@@ -57,6 +60,14 @@ function MealCaloriePopup({ meal, onClose, onSave }) {
             editQty: item.quantity || 1,
             editUnit: item.unit || 'serving',
           })));
+          // Store portion breakdown from AI
+          if (result.estimate.portionBreakdown) {
+            setPortionBreakdown(result.estimate.portionBreakdown);
+          }
+          // Track if grocery context was used
+          if (result.estimate.usedGroceryContext) {
+            setUsedGroceryContext(true);
+          }
         }
       } catch (err) {
         // Fallback to rule-based
@@ -100,7 +111,7 @@ function MealCaloriePopup({ meal, onClose, onSave }) {
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b">
           <h3 className="font-semibold text-gray-900">Calorie Breakdown</h3>
-          <button onClick={onClose} className="p-1 text-gray-400 hover:text-gray-600">
+          <button onClick={onClose} className="p-2 text-gray-400 hover:text-gray-600 min-w-[44px] min-h-[44px] flex items-center justify-center">
             <X size={20} />
           </button>
         </div>
@@ -115,34 +126,69 @@ function MealCaloriePopup({ meal, onClose, onSave }) {
           ) : items.length === 0 ? (
             <p className="text-gray-500 text-center py-8">Could not parse meal items</p>
           ) : (
-            <div className="space-y-3">
-              {items.map((item, idx) => (
-                <div key={idx} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
-                  <div className="flex-1">
-                    <p className="text-sm font-medium text-gray-800">{item.food}</p>
-                    <p className="text-xs text-gray-500">
-                      {Math.round((item.calories / (item.quantity || 1)) * item.editQty)} cal
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="number"
-                      value={item.editQty}
-                      onChange={e => handleQtyChange(idx, e.target.value)}
-                      className="w-16 px-2 py-1 text-sm border rounded text-center"
-                      step="0.5"
-                      min="0"
-                    />
-                    <span className="text-xs text-gray-500">{item.editUnit}</span>
-                  </div>
+            <div className="space-y-4">
+              {/* Portion Breakdown Summary */}
+              {portionBreakdown.length > 0 && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                  <button
+                    onClick={() => setShowBreakdown(!showBreakdown)}
+                    className="flex items-center justify-between w-full text-left"
+                  >
+                    <span className="text-sm font-medium text-blue-800">
+                      What I assumed (tap to {showBreakdown ? 'hide' : 'show'})
+                    </span>
+                    {showBreakdown ? <ChevronUp size={16} className="text-blue-600" /> : <ChevronDown size={16} className="text-blue-600" />}
+                  </button>
+                  {showBreakdown && (
+                    <ul className="mt-2 space-y-1">
+                      {portionBreakdown.map((item, idx) => (
+                        <li key={idx} className="text-xs text-blue-700 flex items-start gap-1">
+                          <span className="text-blue-400 mt-0.5">•</span>
+                          <span>{item}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
-              ))}
+              )}
+
+              {/* Editable Items */}
+              <div className="space-y-3">
+                {items.map((item, idx) => (
+                  <div key={idx} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-800 break-words">{item.food}</p>
+                      <p className="text-xs text-gray-500">
+                        {Math.round((item.calories / (item.quantity || 1)) * item.editQty)} cal
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <input
+                        type="number"
+                        value={item.editQty}
+                        onChange={e => handleQtyChange(idx, e.target.value)}
+                        className="w-16 px-2 py-1 text-sm border rounded text-center"
+                        step="0.5"
+                        min="0"
+                      />
+                      <span className="text-xs text-gray-500 w-12 truncate">{item.editUnit}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>
 
         {/* Footer */}
         <div className="p-4 border-t bg-gray-50">
+          {/* Grocery context indicator */}
+          {usedGroceryContext && (
+            <div className="flex items-center gap-1.5 text-xs text-green-600 mb-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-green-500"></span>
+              <span>Using your grocery list for better estimates</span>
+            </div>
+          )}
           <div className="flex items-center justify-between mb-3">
             <span className="font-medium text-gray-700">Total</span>
             <span className="text-lg font-bold text-emerald-600">{total} cal</span>

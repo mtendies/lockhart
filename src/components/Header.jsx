@@ -18,6 +18,7 @@ import {
 import { getActiveProfile, getProfileColor } from '../profileStore';
 import { useAuth } from '../context/AuthContext';
 import { downloadBackup, parseBackupFile, restoreFromBackup } from '../lib/backupRestore';
+import { getLastBackupDisplay } from '../lib/backupService';
 
 export default function Header({
   onNavigateToProfile,
@@ -241,6 +242,11 @@ export default function Header({
 
                 {/* Backup & Restore */}
                 <div className="border-t border-gray-100 py-1">
+                  {/* Last backed up indicator */}
+                  <div className="px-4 py-2 text-xs text-gray-400 flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-green-400"></span>
+                    Last backed up: {getLastBackupDisplay()}
+                  </div>
                   <button
                     onClick={handleDownloadBackup}
                     className="w-full px-4 py-2.5 flex items-center gap-3 text-sm text-gray-700 hover:bg-gray-50 transition-colors"

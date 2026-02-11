@@ -550,10 +550,13 @@ function WeekSummarySection({
           onChange={(e) => {
             setLocalSummary(e.target.value);
             onSummaryChange(e.target.value);
+            // Auto-expand
+            e.target.style.height = 'auto';
+            e.target.style.height = Math.min(e.target.scrollHeight, 300) + 'px';
           }}
           placeholder="Write your own summary here..."
           rows={4}
-          className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+          className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none overflow-hidden"
         />
       </section>
     );
@@ -646,10 +649,15 @@ function WeekSummarySection({
         <div className="space-y-3">
           <textarea
             value={localSummary}
-            onChange={(e) => setLocalSummary(e.target.value)}
-            rows={10}
-            className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+            onChange={(e) => {
+              setLocalSummary(e.target.value);
+              e.target.style.height = 'auto';
+              e.target.style.height = Math.min(e.target.scrollHeight, 300) + 'px';
+            }}
+            rows={4}
+            className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none overflow-hidden"
             placeholder="Describe how your week went..."
+            style={{ minHeight: '120px' }}
           />
           <div className="flex gap-2">
             <button
@@ -699,10 +707,14 @@ function WeekSummarySection({
             <div>
               <textarea
                 value={userFeedback}
-                onChange={(e) => setUserFeedback(e.target.value)}
+                onChange={(e) => {
+                  setUserFeedback(e.target.value);
+                  e.target.style.height = 'auto';
+                  e.target.style.height = Math.min(e.target.scrollHeight, 200) + 'px';
+                }}
                 placeholder="Any other feedback? Tell me what to focus on more/less, what felt off, what you liked..."
                 rows={2}
-                className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+                className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none overflow-hidden"
               />
               {userFeedback && (
                 <button

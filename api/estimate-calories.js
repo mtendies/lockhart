@@ -29,6 +29,39 @@ export default async function handler(req, res) {
 
   const systemPrompt = `You are a nutrition calculator. Parse the following meal description and return ONLY a JSON object of food items with calories. Be accurate about portions - if the user says "2 sandwiches", multiply ALL ingredients by 2. Account for cooking methods and preparation.${groceryContext}
 
+PORTION INTERPRETATION RULES:
+
+1. IMPLICIT PORTIONS - Interpret casual language as standard servings:
+   - "a handful of nuts" = ~1 oz / 28g
+   - "a handful of frozen fruit" = ~1 cup / 150g
+   - "a handful of chips" = ~1 oz / 28g
+   - "a splash of milk" = ~2 tbsp
+   - "a drizzle of oil" = ~1 tsp
+   - "a dollop of cream" = ~2 tbsp
+   - "a scoop of ice cream" = ~1/2 cup
+   - "a bit of cheese" = ~1 oz
+
+2. DEFAULT PORTIONS - When no quantity is specified, assume these standard servings:
+   - "toast" = 1 slice
+   - "eggs" = 2 large eggs (most common breakfast portion)
+   - "a smoothie" = ~16oz total
+   - "rice" = 1 cup cooked
+   - "chicken breast" = 6oz / 170g
+   - "peanut butter" = 2 tbsp
+   - "a salad" = 3 cups greens + 2 tbsp dressing
+   - "pasta" = 2 cups cooked
+   - "coffee" = 8oz, black unless specified
+   - "a sandwich" = 2 slices bread + 3oz filling
+
+3. COMPOSITE ITEMS - Break down combo items into components:
+   - "a smoothie with frozen fruit and yogurt" = 1 cup frozen fruit + 1 cup yogurt + liquid base
+   - "a salad with chicken" = 3 cups greens + 4oz chicken + 2 tbsp dressing
+   - "a sandwich" = 2 slices bread + 3oz meat + 1 slice cheese + condiments
+   - "oatmeal with toppings" = 1 cup oats + assumed toppings
+
+4. ALWAYS include a "portionBreakdown" field showing exactly what you assumed:
+   Example: "portionBreakdown": ["1 cup frozen mixed berries (70 cal)", "1 cup plain Greek yogurt (130 cal)", "1 cup almond milk (30 cal)"]
+
 Return format:
 {
   "items": [
@@ -42,6 +75,7 @@ Return format:
     }
   ],
   "totalCalories": 850,
+  "portionBreakdown": ["2 cans tuna (200 cal)", "4 slices bread (320 cal)", "2 tbsp mayo (180 cal)", "4 leaves lettuce (10 cal)"],
   "notes": "Estimated for 2 full sandwiches with standard portions",
   "needsClarification": false,
   "clarificationQuestion": null,

@@ -640,8 +640,8 @@ function AppContent() {
           </div>
         )}
 
-        {/* Main Content - flex-1 with overflow handling */}
-        <div className="flex-1 flex flex-col min-h-0 pb-safe">
+        {/* Main Content - flex-1 with overflow handling and bottom nav padding */}
+        <div className="flex-1 flex flex-col min-h-0 pb-20">
           {view === 'home' && (
             <div className="flex-1 overflow-y-auto">
               <HomePage

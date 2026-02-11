@@ -128,6 +128,8 @@ function transformAIResponse(aiResult) {
     confidence: overallConfidence,
     matchedFoods: items.length,
     isAI: true,
+    // Portion breakdown for user verification
+    portionBreakdown: aiResult.portionBreakdown || [],
     // Clarification fields (if AI needs user input)
     needsClarification: aiResult.needsClarification || false,
     clarificationQuestion: aiResult.clarificationQuestion || null,
@@ -195,6 +197,9 @@ export async function estimateCaloriesAI(text) {
     }
 
     const estimate = transformAIResponse(aiResult);
+    // Track whether grocery context was used
+    estimate.usedGroceryContext = recentGroceries.length > 0;
+    estimate.groceryItemsAvailable = recentGroceries.length;
     cacheSet(key, estimate);
     return { estimate, isAI: true };
 

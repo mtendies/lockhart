@@ -149,11 +149,16 @@ export default function FeedbackButton({ currentPage = 'home', isOpenExternal = 
                     </label>
                     <textarea
                       value={feedback}
-                      onChange={(e) => setFeedback(e.target.value)}
+                      onChange={(e) => {
+                        setFeedback(e.target.value);
+                        e.target.style.height = 'auto';
+                        e.target.style.height = Math.min(e.target.scrollHeight, 300) + 'px';
+                      }}
                       placeholder="Type your feedback here..."
                       rows={4}
-                      className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none text-sm"
+                      className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none overflow-hidden text-sm"
                       required
+                      style={{ minHeight: '100px' }}
                     />
                   </div>
 
