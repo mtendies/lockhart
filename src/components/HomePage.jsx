@@ -1796,7 +1796,7 @@ function NutritionCalibrationCard({ mode = 'calibration' }) {
               <Unlock size={18} className="text-amber-600" />
               <span className="font-semibold text-gray-900">Unlock Your Nutrition Profile</span>
             </div>
-            <span className="text-sm text-amber-700 font-medium">
+            <span className="text-sm text-amber-700 font-medium" data-testid="calibration-day-counter">
               Day {progress.calendarDay || Math.min(progress.completed + 1, 5)} of 5
             </span>
           </div>
@@ -3788,6 +3788,7 @@ export default function HomePage({ onNavigate, onOpenCheckIn, syncStatus, onRefr
     <div
       ref={containerRef}
       className="bg-gray-50/50 pb-8"
+      data-testid="home-page"
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}

@@ -483,7 +483,7 @@ function CompletedDaysDropdown({ progress, calibrationData, onEditDay }) {
       >
         <div className="flex items-center gap-2">
           <span className="text-lg">{encouragement.icon}</span>
-          <span className="text-sm font-medium text-amber-800">
+          <span className="text-sm font-medium text-amber-800" data-testid="calibration-day-counter">
             Day {progress.calendarDay || Math.min(progress.completed + 1, 5)} of 5
             {progress.completed > 0 && progress.remaining > 0 && " - Keep it up!"}
             {progress.completed === 5 && " - All done!"}
@@ -1328,6 +1328,7 @@ function ExpandingTextarea({ value, onChange, placeholder, disabled, onSave }) {
         onFocus={handleFocus}
         disabled={disabled}
         placeholder={placeholder}
+        data-testid="meal-input"
         className={`w-full px-3 py-2.5 rounded-lg border border-gray-200 focus:border-primary-300 focus:ring-2 focus:ring-primary-100 outline-none transition-all text-sm text-gray-700 placeholder:text-gray-400 resize-none overflow-hidden whitespace-pre-wrap ${
           disabled ? 'bg-gray-50 text-gray-500' : 'bg-white'
         }`}

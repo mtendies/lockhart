@@ -80,12 +80,13 @@ function saveActivities(activities) {
  */
 export function logActivity(activity) {
   const activities = getActivities();
+  const now = new Date();
 
   const newActivity = {
     id: `act-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-    timestamp: new Date().toISOString(),
-    date: new Date().toISOString().split('T')[0], // YYYY-MM-DD
-    weekOf: getWeekOf(new Date()),
+    timestamp: now.toISOString(),
+    date: getLocalDateString(now), // FIX #9: Use local date, not UTC
+    weekOf: getWeekOf(now),
     ...activity,
   };
 
@@ -138,14 +139,28 @@ export function getRecentActivities(count = 10) {
 }
 
 /**
+ * FIX #9: Get local date string (YYYY-MM-DD) in user's timezone
+ * Avoids timezone bugs where UTC date differs from local date
+ */
+export function getLocalDateString(date = new Date()) {
+  const d = date instanceof Date ? date : new Date(date);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/**
  * Get the Monday of the week for a given date (ISO week)
+ * FIX #9: Uses local timezone for date calculation
  */
 export function getWeekOf(date) {
   const d = new Date(date);
   const day = d.getDay();
   const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Adjust for Sunday
-  const monday = new Date(d.setDate(diff));
-  return monday.toISOString().split('T')[0];
+  const monday = new Date(d);
+  monday.setDate(diff);
+  return getLocalDateString(monday);
 }
 
 /**

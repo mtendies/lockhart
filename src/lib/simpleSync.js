@@ -37,6 +37,201 @@ const COLUMN_TO_KEY = Object.fromEntries(
 const ALL_COLUMNS = Object.values(SYNC_MAP);
 
 // ============================================
+// FIX #3: DATA VALIDATION ON SUPABASE READS
+// ============================================
+
+/**
+ * Validate data loaded from Supabase.
+ * Returns validated data or null if data is malformed beyond repair.
+ * Logs warnings for any detected issues.
+ */
+function validateSupabaseData(localKey, data) {
+  if (data === null || data === undefined) {
+    return null;
+  }
+
+  // Must be an object (not a primitive)
+  if (typeof data !== 'object') {
+    console.warn(`[SimpleSync] VALIDATION: ${localKey} is not an object, got ${typeof data}`);
+    return null;
+  }
+
+  // Key-specific validation
+  switch (localKey) {
+    case 'health-advisor-profile':
+      return validateProfileData(data);
+    case 'health-advisor-activities':
+      return validateActivitiesData(data);
+    case 'health-advisor-chats':
+      return validateChatsData(data);
+    case 'health-advisor-nutrition-calibration':
+      return validateCalibrationData(data);
+    case 'health-advisor-groceries':
+      return validateGroceryData(data);
+    case 'health-advisor-focus-goals':
+      return validateGoalsData(data);
+    case 'health-advisor-checkins':
+      return validateCheckinsData(data);
+    default:
+      // Generic validation for other stores
+      return validateGenericData(localKey, data);
+  }
+}
+
+function validateProfileData(data) {
+  const validated = { ...data };
+
+  // Ensure required fields have valid types
+  if (validated.name && typeof validated.name !== 'string') {
+    console.warn('[SimpleSync] VALIDATION: profile.name is not a string, clearing');
+    validated.name = '';
+  }
+
+  if (validated.age !== undefined && validated.age !== null) {
+    const age = Number(validated.age);
+    if (isNaN(age) || age < 0 || age > 150) {
+      console.warn('[SimpleSync] VALIDATION: profile.age is invalid, clearing');
+      validated.age = null;
+    }
+  }
+
+  if (validated.weight !== undefined && validated.weight !== null) {
+    const weight = Number(validated.weight);
+    if (isNaN(weight) || weight < 0 || weight > 1500) {
+      console.warn('[SimpleSync] VALIDATION: profile.weight is invalid, clearing');
+      validated.weight = null;
+    }
+  }
+
+  if (validated.goals && !Array.isArray(validated.goals)) {
+    console.warn('[SimpleSync] VALIDATION: profile.goals is not an array, resetting');
+    validated.goals = [];
+  }
+
+  return validated;
+}
+
+function validateActivitiesData(data) {
+  // Can be array (legacy) or { activities: [], updatedAt }
+  if (Array.isArray(data)) {
+    return data.filter(a => a && typeof a === 'object' && a.id);
+  }
+
+  if (data.activities !== undefined) {
+    if (!Array.isArray(data.activities)) {
+      console.warn('[SimpleSync] VALIDATION: activities.activities is not an array');
+      return { ...data, activities: [] };
+    }
+    return {
+      ...data,
+      activities: data.activities.filter(a => a && typeof a === 'object' && a.id)
+    };
+  }
+
+  return data;
+}
+
+function validateChatsData(data) {
+  // Can be array or { chats: [], updatedAt }
+  if (Array.isArray(data)) {
+    return data.filter(c => c && typeof c === 'object' && c.id);
+  }
+
+  if (data.chats !== undefined) {
+    if (!Array.isArray(data.chats)) {
+      console.warn('[SimpleSync] VALIDATION: chats.chats is not an array');
+      return { ...data, chats: [] };
+    }
+    return {
+      ...data,
+      chats: data.chats.filter(c => c && typeof c === 'object' && c.id)
+    };
+  }
+
+  return data;
+}
+
+function validateCalibrationData(data) {
+  const validated = { ...data };
+
+  // Ensure days is an object
+  if (validated.days && typeof validated.days !== 'object') {
+    console.warn('[SimpleSync] VALIDATION: calibration.days is not an object');
+    validated.days = {};
+  }
+
+  // Ensure currentDay is a valid string or null
+  if (validated.currentDay && typeof validated.currentDay !== 'string') {
+    console.warn('[SimpleSync] VALIDATION: calibration.currentDay is not a string');
+    validated.currentDay = null;
+  }
+
+  return validated;
+}
+
+function validateGroceryData(data) {
+  const validated = { ...data };
+
+  // Ensure orders is an array
+  if (validated.orders && !Array.isArray(validated.orders)) {
+    console.warn('[SimpleSync] VALIDATION: grocery.orders is not an array');
+    validated.orders = [];
+  }
+
+  // Ensure allItems is an array
+  if (validated.allItems && !Array.isArray(validated.allItems)) {
+    console.warn('[SimpleSync] VALIDATION: grocery.allItems is not an array');
+    validated.allItems = [];
+  }
+
+  return validated;
+}
+
+function validateGoalsData(data) {
+  const validated = { ...data };
+
+  // Ensure goals is an array
+  if (validated.goals && !Array.isArray(validated.goals)) {
+    console.warn('[SimpleSync] VALIDATION: goals.goals is not an array');
+    validated.goals = [];
+  }
+
+  // Ensure weekOf is a string or null
+  if (validated.weekOf && typeof validated.weekOf !== 'string') {
+    console.warn('[SimpleSync] VALIDATION: goals.weekOf is not a string');
+    validated.weekOf = null;
+  }
+
+  return validated;
+}
+
+function validateCheckinsData(data) {
+  // Can be array or { checkins: [], updatedAt }
+  if (Array.isArray(data)) {
+    return data.filter(c => c && typeof c === 'object');
+  }
+
+  if (data.checkins !== undefined) {
+    if (!Array.isArray(data.checkins)) {
+      console.warn('[SimpleSync] VALIDATION: checkins.checkins is not an array');
+      return { ...data, checkins: [] };
+    }
+    return data;
+  }
+
+  return data;
+}
+
+function validateGenericData(localKey, data) {
+  // For unknown stores, just ensure it's a valid object
+  if (typeof data !== 'object' || data === null) {
+    console.warn(`[SimpleSync] VALIDATION: ${localKey} is not a valid object`);
+    return null;
+  }
+  return data;
+}
+
+// ============================================
 // GET CURRENT USER
 // ============================================
 async function getCurrentUserId() {
@@ -341,12 +536,20 @@ export async function loadFromSupabase() {
 
       if (remoteValue !== null && remoteValue !== undefined) {
         try {
+          // FIX #3: Validate remote data before using it
+          const validatedRemote = validateSupabaseData(localKey, remoteValue);
+          if (validatedRemote === null) {
+            console.warn(`[SimpleSync] Skipping ${localKey}: remote data failed validation`);
+            errors.push(`${localKey}: remote data failed validation`);
+            continue;
+          }
+
           // Get existing local data
           const localRaw = getItem(localKey);
           const localData = localRaw ? JSON.parse(localRaw) : null;
 
           // Check if we should preserve local data
-          if (localData && shouldPreserveLocal(localKey, localData, remoteValue)) {
+          if (localData && shouldPreserveLocal(localKey, localData, validatedRemote)) {
             // LOCAL WINS - push local to Supabase instead of overwriting
             preserved.push(localKey);
             console.log(`[SimpleSync] PRESERVED local ${localKey}, pushing to Supabase...`);
@@ -360,8 +563,8 @@ export async function loadFromSupabase() {
               console.warn(`[SimpleSync] Failed to push ${localKey}: ${pushResult.error}`);
             }
           } else {
-            // REMOTE WINS - save to localStorage
-            setItem(localKey, JSON.stringify(remoteValue));
+            // REMOTE WINS - save validated data to localStorage
+            setItem(localKey, JSON.stringify(validatedRemote));
             loaded.push(localKey);
             console.log(`[SimpleSync] Loaded ${localKey} from ${column}`);
           }

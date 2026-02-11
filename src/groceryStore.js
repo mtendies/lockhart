@@ -51,6 +51,10 @@ export function addGroceryOrder(order) {
   data.orders.unshift(newOrder);
 
   // Update allItems with frequency tracking
+  // FIX #7: Calculate next sortIndex for new items
+  const maxSortIndex = data.allItems.reduce((max, i) => Math.max(max, i.sortIndex || 0), 0);
+  let nextSortIndex = maxSortIndex + 1;
+
   for (const item of newOrder.items) {
     const normalized = normalizeItemName(item);
     const existing = data.allItems.find(i => i.normalized === normalized);
@@ -64,6 +68,7 @@ export function addGroceryOrder(order) {
         count: 1,
         category: null, // Will be set during analysis
         lastPurchased: newOrder.date,
+        sortIndex: nextSortIndex++, // FIX #7: Add sortIndex for user-defined order
       });
     }
   }
@@ -92,6 +97,46 @@ export function getFrequentItems(limit = 10) {
   return data.allItems
     .sort((a, b) => b.count - a.count)
     .slice(0, limit);
+}
+
+/**
+ * FIX #7: Get items sorted by user-defined order (sortIndex)
+ */
+export function getItemsByUserOrder(limit = 50) {
+  const data = getGroceryData();
+  return data.allItems
+    .sort((a, b) => (a.sortIndex || 0) - (b.sortIndex || 0))
+    .slice(0, limit);
+}
+
+/**
+ * FIX #7: Update item order - move an item to a new position
+ * @param {string} normalizedName - The normalized item name to move
+ * @param {number} newIndex - The new position index
+ */
+export function reorderItem(normalizedName, newIndex) {
+  const data = getGroceryData();
+  const items = data.allItems;
+
+  // Find the item to move
+  const itemIndex = items.findIndex(i => i.normalized === normalizedName);
+  if (itemIndex === -1) return false;
+
+  // Sort items by current sortIndex
+  items.sort((a, b) => (a.sortIndex || 0) - (b.sortIndex || 0));
+
+  // Move item to new position
+  const [item] = items.splice(itemIndex, 1);
+  items.splice(newIndex, 0, item);
+
+  // Reassign sortIndex values
+  items.forEach((it, idx) => {
+    it.sortIndex = idx;
+  });
+
+  data.allItems = items;
+  saveGroceryData(data);
+  return true;
 }
 
 export function getRecentOrders(limit = 10) {

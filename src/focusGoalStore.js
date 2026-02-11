@@ -16,6 +16,11 @@ const HISTORY_KEY = 'health-advisor-goal-history';
 const MAX_GOALS = 3;
 const MAX_WITH_CARRY = 4;
 
+// FIX #8: Debounce state for preventing duplicate goal creation
+let lastAddedGoalText = null;
+let lastAddedGoalTime = 0;
+const DUPLICATE_DEBOUNCE_MS = 1000; // 1 second debounce
+
 // ============================================
 // HELPERS
 // ============================================
@@ -108,7 +113,33 @@ function ensureCurrentWeek() {
  * @returns {{ success: boolean, error?: string, goal?: object }}
  */
 export function addGoal({ text, target = 1, unit = 'times', type = 'one-time' }) {
+  const normalizedText = text.trim().toLowerCase();
+
+  // FIX #8: Debounce - prevent duplicate submissions within 1 second
+  const now = Date.now();
+  if (normalizedText === lastAddedGoalText && (now - lastAddedGoalTime) < DUPLICATE_DEBOUNCE_MS) {
+    console.warn('[FocusGoals] Duplicate goal submission blocked (debounce)');
+    return {
+      success: false,
+      error: 'Please wait before adding another goal.',
+    };
+  }
+
   const goals = getGoals();
+
+  // FIX #8: Check for existing goal with same text
+  const existingGoal = goals.find(g =>
+    g.text.trim().toLowerCase() === normalizedText &&
+    g.status !== 'completed' &&
+    g.status !== 'dropped'
+  );
+  if (existingGoal) {
+    return {
+      success: false,
+      error: 'You already have this goal for this week.',
+    };
+  }
+
   const hasCarried = goals.some(g => g.status === 'carried' || g.carriedFrom);
 
   const maxAllowed = hasCarried ? MAX_WITH_CARRY : MAX_GOALS;
@@ -118,6 +149,10 @@ export function addGoal({ text, target = 1, unit = 'times', type = 'one-time' })
       error: `You have ${MAX_GOALS} goals this week. Complete or remove one first.`,
     };
   }
+
+  // FIX #8: Update debounce state
+  lastAddedGoalText = normalizedText;
+  lastAddedGoalTime = now;
 
   const goal = {
     id: generateId(),

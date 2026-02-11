@@ -86,7 +86,7 @@ import { getLearnedInsights } from './learnedInsightsStore';
 
 function AppContent() {
   const { user, loading: authLoading, signOut } = useAuth();
-  const { syncStatus, refresh, pushAll, isReady, isLoading } = useSimpleSync();
+  const { syncStatus, refresh, pushAll, isReady, isLoading, isOffline, supabaseDown } = useSimpleSync();
 
   // Initialize backup service on mount
   useEffect(() => {
@@ -551,6 +551,27 @@ function AppContent() {
   return (
     <ErrorBoundary>
       <div className="h-screen bg-gradient-to-br from-primary-50 via-white to-accent-50 flex flex-col overflow-hidden">
+        {/* FIX #12: Offline/Connection Banner */}
+        {(isOffline || supabaseDown) && (
+          <div className={`px-4 py-2 text-center text-sm font-medium ${isOffline ? 'bg-gray-700 text-white' : 'bg-amber-100 text-amber-800'}`}>
+            {isOffline ? (
+              <span className="flex items-center justify-center gap-2">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 5.636a9 9 0 010 12.728m0 0l-2.829-2.829m2.829 2.829L21 21M15.536 8.464a5 5 0 010 7.072m0 0l-2.829-2.829m-4.243 2.829a4.978 4.978 0 01-1.414-2.83m-1.414 5.658a9 9 0 01-2.167-9.238m7.824 2.167a1 1 0 111.414 1.414m-1.414-1.414L3 3m8.293 8.293l1.414 1.414" />
+                </svg>
+                You're offline. Changes will sync when you reconnect.
+              </span>
+            ) : (
+              <span className="flex items-center justify-center gap-2">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+                Connection issue. Your data is safe locally.
+              </span>
+            )}
+          </div>
+        )}
+
         {/* Header with Profile Dropdown */}
         <Header
           onNavigateToProfile={() => setView('profile')}
@@ -751,7 +772,7 @@ function App() {
 
 // Handles auth state and shows appropriate component
 function AuthenticatedApp() {
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, sessionExpired, clearSessionExpired } = useAuth();
   const [showIntro, setShowIntro] = useState(() => {
     // Check if user has seen the intro
     return !localStorage.getItem('health-advisor-intro-seen');
@@ -764,6 +785,34 @@ function AuthenticatedApp() {
         <div className="text-center">
           <div className="w-12 h-12 border-4 border-primary-200 border-t-primary-600 rounded-full animate-spin mx-auto" />
           <p className="mt-4 text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // FIX #4: Show session expired modal
+  if (sessionExpired) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+        <div className="max-w-md w-full bg-white rounded-xl shadow-lg p-6 text-center">
+          <div className="w-12 h-12 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg className="w-6 h-6 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+          </div>
+          <h2 className="text-lg font-semibold text-gray-900 mb-2">Session Expired</h2>
+          <p className="text-gray-600 mb-6">
+            Your session has expired. Please log in again to continue.
+          </p>
+          <button
+            onClick={() => {
+              clearSessionExpired();
+              window.location.reload();
+            }}
+            className="w-full py-3 bg-primary-600 text-white rounded-lg font-medium hover:bg-primary-700 transition-colors"
+          >
+            Log In Again
+          </button>
         </div>
       </div>
     );

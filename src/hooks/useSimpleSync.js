@@ -22,6 +22,31 @@ export function useSimpleSync() {
   const [syncStatus, setSyncStatus] = useState(hasLoadedThisSession ? 'ready' : 'idle');
   const [lastSynced, setLastSynced] = useState(null);
   const [error, setError] = useState(null);
+  // FIX #12: Track online/offline state for graceful degradation
+  const [isOffline, setIsOffline] = useState(!navigator.onLine);
+  const [supabaseDown, setSupabaseDown] = useState(false);
+
+  // FIX #12: Listen for online/offline events
+  useEffect(() => {
+    const handleOnline = () => {
+      console.log('[useSimpleSync] Back online');
+      setIsOffline(false);
+      setSupabaseDown(false);
+    };
+
+    const handleOffline = () => {
+      console.log('[useSimpleSync] Went offline');
+      setIsOffline(true);
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   // Load from Supabase on mount (when authenticated)
   useEffect(() => {
@@ -47,6 +72,7 @@ export function useSimpleSync() {
       if (result.success) {
         setSyncStatus('ready');
         setLastSynced(new Date());
+        setSupabaseDown(false);
         hasLoadedThisSession = true;
         console.log('[useSimpleSync] Load complete:', result.loaded);
 
@@ -56,8 +82,22 @@ export function useSimpleSync() {
           detail: { loaded: result.loaded }
         }));
       } else {
+        // FIX #12: Detect Supabase downtime vs other errors
+        const errorStr = result.errors.join(', ');
+        const isConnectionError = errorStr.includes('fetch') ||
+          errorStr.includes('network') ||
+          errorStr.includes('Failed to fetch') ||
+          errorStr.includes('NetworkError') ||
+          errorStr.includes('timeout');
+
+        if (isConnectionError && navigator.onLine) {
+          // Online but can't reach Supabase = Supabase is down
+          setSupabaseDown(true);
+          console.warn('[useSimpleSync] Supabase appears to be down');
+        }
+
         setSyncStatus('error');
-        setError(result.errors.join(', '));
+        setError(errorStr);
         console.error('[useSimpleSync] Load failed:', result.errors);
       }
     }
@@ -122,6 +162,9 @@ export function useSimpleSync() {
     sync,       // Sync a single data type
     isReady: syncStatus === 'ready',
     isLoading: syncStatus === 'loading',
+    // FIX #12: Expose offline/connection status for UI feedback
+    isOffline,      // Browser is offline
+    supabaseDown,   // Online but Supabase unreachable
   };
 }
 

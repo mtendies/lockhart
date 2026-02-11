@@ -32,6 +32,7 @@ function saveCheckIns(checkIns) {
 }
 
 // Get the Monday of the PREVIOUS week
+// FIX #10: Uses local timezone for date calculation
 function getPreviousWeekStart() {
   const d = new Date();
   const day = d.getDay();
@@ -39,7 +40,7 @@ function getPreviousWeekStart() {
   const diff = d.getDate() - day + (day === 0 ? -6 : 1) - 7;
   d.setDate(diff);
   d.setHours(0, 0, 0, 0);
-  return d.toISOString().split('T')[0];
+  return getLocalDateString(d);
 }
 
 // Check if it's Sunday (or early in the week after) and the user hasn't completed their check-in
@@ -179,14 +180,27 @@ export function getRecentCheckIns(count = 8) {
     .slice(0, count);
 }
 
+/**
+ * FIX #10: Get local date string (YYYY-MM-DD) in user's timezone
+ * Avoids timezone bugs where UTC date differs from local date
+ */
+function getLocalDateString(date) {
+  const d = date instanceof Date ? date : new Date(date);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 // Get the Monday of the week for a given date
+// FIX #10: Uses local timezone for date calculation
 function getWeekStart(date) {
   const d = new Date(date);
   const day = d.getDay();
   const diff = d.getDate() - day + (day === 0 ? -6 : 1);
   d.setDate(diff);
   d.setHours(0, 0, 0, 0);
-  return d.toISOString().split('T')[0];
+  return getLocalDateString(d);
 }
 
 export function formatWeekOf(dateStr) {

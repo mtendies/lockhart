@@ -90,12 +90,13 @@ function DataRecoveryBanner({ onRecover }) {
 
 function DepthSelection({ onSelect, current, onRecover }) {
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" data-testid="onboarding-depth-selection">
       <DataRecoveryBanner onRecover={onRecover} />
       <p className="text-gray-600 text-sm mb-6">How detailed would you like the onboarding process to be?</p>
       {DEPTH_OPTIONS.map(opt => (
         <button
           key={opt.id}
+          data-testid={`depth-option-${opt.id}`}
           onClick={() => onSelect(opt.id)}
           className={`w-full text-left p-4 rounded-xl border-2 transition-all ${
             current === opt.id
@@ -407,7 +408,7 @@ export default function Onboarding({ onComplete, initialData, onCancel }) {
   const progress = ((step + 1) / steps.length) * 100;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-primary-50 via-white to-accent-50">
+    <div className="min-h-screen bg-gradient-to-br from-primary-50 via-white to-accent-50" data-testid="onboarding-form">
       <div className="max-w-2xl mx-auto px-4 py-8 sm:py-12">
         {/* Header */}
         <div className="text-center mb-8">
@@ -511,6 +512,7 @@ export default function Onboarding({ onComplete, initialData, onCancel }) {
           {isLastStep ? (
             <button
               onClick={handleSubmit}
+              data-testid="onboarding-submit-button"
               className="flex items-center gap-2 px-6 py-2.5 bg-gradient-to-r from-primary-500 to-primary-600 text-white rounded-xl font-medium shadow-md hover:shadow-lg hover:from-primary-600 hover:to-primary-700 transition-all"
             >
               {isEditing ? 'Save Changes' : 'Complete Setup'}
@@ -518,6 +520,7 @@ export default function Onboarding({ onComplete, initialData, onCancel }) {
           ) : (
             <button
               onClick={next}
+              data-testid="onboarding-next-button"
               className="flex items-center gap-2 px-5 py-2.5 bg-primary-500 text-white rounded-xl font-medium hover:bg-primary-600 transition-all"
             >
               Next <ChevronRight size={18} />

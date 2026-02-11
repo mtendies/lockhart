@@ -12,7 +12,7 @@ export default function BottomNav({ currentView, onNavigate }) {
   const normalizedView = currentView === 'dashboard' ? 'home' : currentView;
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50 safe-area-bottom">
+    <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50 safe-area-bottom" data-testid="bottom-nav">
       <div className="flex items-center justify-around h-16 max-w-lg mx-auto">
         {NAV_ITEMS.map(item => {
           const Icon = item.icon;
@@ -22,6 +22,7 @@ export default function BottomNav({ currentView, onNavigate }) {
           return (
             <button
               key={item.id}
+              data-testid={`nav-${item.id}`}
               onClick={() => onNavigate(item.id)}
               className={`flex flex-col items-center justify-center flex-1 h-full transition-colors ${
                 isActive

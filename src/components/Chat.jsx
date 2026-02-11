@@ -1349,11 +1349,13 @@ export default function Chat({
                   className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 focus:border-primary-300 focus:ring-2 focus:ring-primary-100 outline-none text-gray-700 text-sm resize-none min-h-[44px] max-h-[150px] transition-[height,border-color,box-shadow] duration-200"
                   disabled={loading}
                   rows={1}
+                  data-testid="chat-input"
                 />
                 <button
                   type="submit"
                   disabled={!input.trim() || loading}
                   className="px-4 py-2.5 bg-primary-600 text-white rounded-xl hover:bg-primary-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed h-[44px]"
+                  data-testid="chat-send-button"
                 >
                   <Send size={18} />
                 </button>

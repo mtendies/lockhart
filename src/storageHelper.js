@@ -2,9 +2,85 @@
  * Storage Helper
  * Provides profile-aware storage access for all stores.
  * Automatically prefixes storage keys with the active profile ID.
+ *
+ * FIX #2: Implements BroadcastChannel for multi-tab coordination.
+ * When one tab writes, it notifies others to reload from localStorage.
  */
 
 import { getActiveProfileId, PROFILE_STORAGE_KEYS } from './profileStore';
+
+// ============================================
+// FIX #2: Multi-tab sync via BroadcastChannel
+// ============================================
+
+const CHANNEL_NAME = 'health-advisor-sync';
+let broadcastChannel = null;
+let storageChangeCallbacks = [];
+
+// Initialize BroadcastChannel if supported
+if (typeof window !== 'undefined') {
+  try {
+    if ('BroadcastChannel' in window) {
+      broadcastChannel = new BroadcastChannel(CHANNEL_NAME);
+      broadcastChannel.onmessage = (event) => {
+        const { type, key } = event.data || {};
+        if (type === 'storage-update') {
+          console.log(`[StorageHelper] Received cross-tab update for: ${key}`);
+          // Notify all registered callbacks
+          storageChangeCallbacks.forEach(callback => {
+            try {
+              callback(key);
+            } catch (e) {
+              console.error('[StorageHelper] Callback error:', e);
+            }
+          });
+        }
+      };
+    } else {
+      // Fallback to storage event listener for older browsers
+      window.addEventListener('storage', (event) => {
+        if (event.key && event.newValue !== null) {
+          console.log(`[StorageHelper] Storage event for: ${event.key}`);
+          storageChangeCallbacks.forEach(callback => {
+            try {
+              callback(event.key);
+            } catch (e) {
+              console.error('[StorageHelper] Callback error:', e);
+            }
+          });
+        }
+      });
+    }
+  } catch (e) {
+    console.warn('[StorageHelper] Failed to initialize cross-tab sync:', e);
+  }
+}
+
+/**
+ * Notify other tabs about a storage update
+ */
+function notifyOtherTabs(key) {
+  if (broadcastChannel) {
+    try {
+      broadcastChannel.postMessage({ type: 'storage-update', key });
+    } catch (e) {
+      console.warn('[StorageHelper] Failed to broadcast update:', e);
+    }
+  }
+  // Storage event fires automatically for other tabs when using localStorage
+}
+
+/**
+ * Register a callback to be notified when another tab updates storage
+ * @param {Function} callback - Function to call with the updated key
+ * @returns {Function} - Unsubscribe function
+ */
+export function onStorageChange(callback) {
+  storageChangeCallbacks.push(callback);
+  return () => {
+    storageChangeCallbacks = storageChangeCallbacks.filter(cb => cb !== callback);
+  };
+}
 
 /**
  * Get the profile-prefixed storage key
@@ -40,6 +116,8 @@ export function setItem(baseKey, value) {
   const key = getStorageKey(baseKey);
   try {
     localStorage.setItem(key, value);
+    // FIX #2: Notify other tabs about this update
+    notifyOtherTabs(baseKey);
   } catch (e) {
     if (e?.name === 'QuotaExceededError' || e?.code === 22) {
       // FIX C2: Attempt to prune old data on quota exceeded
@@ -47,6 +125,8 @@ export function setItem(baseKey, value) {
       pruneOldestData();
       try {
         localStorage.setItem(key, value);
+        // FIX #2: Notify other tabs about this update
+        notifyOtherTabs(baseKey);
         console.log(`Successfully saved ${baseKey} after pruning`);
         return;
       } catch (retryError) {

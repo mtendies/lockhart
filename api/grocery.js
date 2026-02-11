@@ -255,6 +255,45 @@ Return ONLY a JSON array of item names.`;
 }
 
 // ============================================
+// FIX #13: Build allergen keywords from user profile
+// ============================================
+function buildAllergenKeywords(allergies = [], intolerances = []) {
+  const keywords = [];
+
+  const allergenMap = {
+    'lactose': ['milk', 'dairy', 'yogurt', 'cheese', 'whey', 'casein', 'cream', 'butter', 'ice cream'],
+    'dairy': ['milk', 'dairy', 'yogurt', 'cheese', 'whey', 'casein', 'cream', 'butter', 'ice cream'],
+    'gluten': ['wheat', 'bread', 'pasta', 'flour', 'barley', 'rye', 'cereal', 'crackers'],
+    'nuts': ['almond', 'peanut', 'cashew', 'walnut', 'pecan', 'pistachio', 'hazelnut', 'nut'],
+    'tree nuts': ['almond', 'cashew', 'walnut', 'pecan', 'pistachio', 'hazelnut', 'macadamia'],
+    'peanuts': ['peanut', 'peanut butter'],
+    'eggs': ['egg', 'eggs', 'mayonnaise', 'mayo'],
+    'soy': ['soy', 'tofu', 'tempeh', 'edamame', 'soybean'],
+    'shellfish': ['shrimp', 'crab', 'lobster', 'shellfish', 'clam', 'mussel', 'oyster'],
+    'fish': ['salmon', 'tuna', 'cod', 'fish', 'tilapia', 'sardine', 'anchovy'],
+    'sesame': ['sesame', 'tahini'],
+  };
+
+  const all = [...allergies, ...intolerances];
+  for (const item of all) {
+    if (!item) continue;
+    const lower = item.toLowerCase();
+
+    // Check if it matches a known allergen category
+    for (const [allergen, relatedKeywords] of Object.entries(allergenMap)) {
+      if (lower.includes(allergen)) {
+        keywords.push(...relatedKeywords);
+      }
+    }
+
+    // Also add the raw allergen term itself
+    keywords.push(lower);
+  }
+
+  return [...new Set(keywords)]; // Dedupe
+}
+
+// ============================================
 // ANALYZE: Analyze shopping patterns
 // ============================================
 async function handleAnalyze(req, res, apiKey) {
@@ -285,6 +324,13 @@ async function handleAnalyze(req, res, apiKey) {
   const restrictions = profile?.restrictions || 'none specified';
   const playBookSummary = playbook?.summary || '';
 
+  // FIX #13: Extract allergies and intolerances from profile
+  const allergies = profile?.allergies || [];
+  const intolerances = profile?.intolerances || [];
+  const dietaryRestrictions = [...allergies, ...intolerances, restrictions]
+    .filter(r => r && r !== 'none specified')
+    .join(', ') || 'none';
+
   const weeklyFocus = (playbook?.weeklyFocus || []).map(f => f.action).join('; ') || 'none';
   const principles = (playbook?.principles || []).map(p => p.text).join('; ') || 'none';
 
@@ -292,8 +338,13 @@ async function handleAnalyze(req, res, apiKey) {
 
 ## User Profile
 - Goals: ${userGoals}
-- Dietary restrictions: ${restrictions}
+- **CRITICAL - Dietary restrictions/allergies/intolerances: ${dietaryRestrictions}**
 - Playbook summary: ${playBookSummary || 'No playbook yet'}
+
+**IMPORTANT: NEVER suggest products containing ingredients the user is allergic to or intolerant of.**
+- If user is lactose intolerant: NO dairy-based products (milk, yogurt, cheese, whey protein, etc.)
+- If user has nut allergy: NO nut-based products (almond milk, peanut butter, etc.)
+- If user is gluten-free: NO wheat/gluten products
 
 ## Current Playbook Focus
 - This Week's Focus: ${weeklyFocus}
@@ -367,15 +418,27 @@ IMPORTANT: Return ONLY valid JSON.`;
         analysis = JSON.parse(content);
       }
 
+      // FIX #13: Post-process to filter out swaps containing allergens
+      const allergenKeywords = buildAllergenKeywords(allergies, intolerances);
+      const filteredSwaps = (analysis.smartSwaps || []).filter(swap => {
+        const suggestion = (swap.suggestion || '').toLowerCase();
+        return !allergenKeywords.some(keyword => suggestion.includes(keyword));
+      });
+
+      const filteredSuggestions = (analysis.cartSuggestions || []).filter(item => {
+        const itemName = (item.item || '').toLowerCase();
+        return !allergenKeywords.some(keyword => itemName.includes(keyword));
+      });
+
       res.json({
         patterns: {
           categoryBreakdown: analysis.categoryBreakdown,
           frequentItems: analysis.frequentItems,
         },
         recommendations: {
-          smartSwaps: analysis.smartSwaps,
+          smartSwaps: filteredSwaps,
           potentialGaps: analysis.potentialGaps,
-          cartSuggestions: analysis.cartSuggestions,
+          cartSuggestions: filteredSuggestions,
         },
         wins: analysis.wins || [],
         habitsFormed: analysis.habitsFormed || [],
