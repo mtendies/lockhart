@@ -747,7 +747,7 @@ function QuickEntryBox({ onSubmit, onNavigate, onActivityLogged }) {
   }
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-4">
+    <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5">
       {/* Clarifying Question */}
       {clarifyingQuestion && (
         <div className="mb-3 p-4 rounded-xl bg-blue-50 border border-blue-200">
